@@ -1,0 +1,3 @@
+# The solving image deliberately uses Python's standard library only.
+# CTFy authoring CLI is a separate host-side dependency, not installed here.
+

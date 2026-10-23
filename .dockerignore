@@ -1,0 +1,10 @@
+_research/
+research/
+author/
+tests/
+docs/
+artifacts/
+__pycache__/
+*.pyc
+.git/
+*.md

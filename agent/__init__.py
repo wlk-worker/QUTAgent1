@@ -1,0 +1,2 @@
+"""CTFy competition agent."""
+
