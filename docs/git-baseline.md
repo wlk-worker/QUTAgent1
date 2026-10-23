@@ -1,17 +1,19 @@
 # 协作基线（Git / 环境 / 证据）
 
-更新：2026-10-23。基线提交：`bbde74a chore: establish local prototype baseline`。
+更新：2026-10-23。基线提交：`bbde74a chore: establish local prototype baseline`；本轮功能提交：`255c262 feat: add isolated web lab, http tool, and authoring/participation flows`。
 
 ## 1. 当前纳入版本控制的内容
 
 已提交：
 
-- `agent/`：CTFY-0001 入口、契约、模型/平台客户端、循环、预算、安全与工具。
+- `agent/`：CTFY-0001 入口、契约、模型/平台客户端、循环、预算、安全、shell 与结构化 HTTP 工具。
+- `labs/`：进程级授权 Web 靶题、mock CTFy、假模型与固定预算 runner。
 - `author/__init__.py`、`author/generate.py`、`author/prepare.py`：离线 Web 候选题生成与本地验证。
-- `tests/`：契约、集成、可靠性测试（Windows 下 Linux-only 用例跳过）。
-- `scripts/`：本地 dry run、镜像内 Web 工具检查、一键验收。
+- `author/controller.py`：赛时出题流程（默认 dry-run，可选出题包上传 + 只读轮询）。
+- `tests/`：契约、集成、可靠性、靶题、HTTP 工具、出题/参赛流程测试（当前 67 项，2 项 Linux-only skip）。
+- `scripts/`：本地 dry run、镜像内 Web 工具检查、一键验收、`run_lab.py`、`platform_flow.py`。
 - `examples/dry-run/`：无凭据的合成任务。
-- `docs/`：验证记录、规则审计、登录后查阅记录、扩展入口。
+- `docs/`：验证记录、规则审计/询问、登录后查阅、扩展入口、靶题实验、出题上传、参赛流程、协作基线。
 - `Dockerfile`、`.dockerignore`、`.gitattributes`、`requirements.lock`。
 
 不纳入版本控制（见 `.gitignore`）：
@@ -30,6 +32,9 @@ Windows（Python 3.14）：
 ```powershell
 python -X utf8 -m unittest discover -s tests -v
 python -X utf8 scripts/run_local.py
+python -X utf8 scripts/run_lab.py --model fake --set dev
+python -X utf8 author/controller.py --seed 46 --dry-run
+python -X utf8 scripts/platform_flow.py status --competition-id <id>
 ```
 
 Linux/WSL（有 Docker 时）：
@@ -62,7 +67,7 @@ bash scripts/verify_local.sh
 | E3 平台镜像审核 | `ctfy agent check` 通过、平台 operator 审核 | 镜像可被平台调度；不证明题解能力 |
 | E4 平台接受答案 | 比赛/练习平台实际判分记录 | 真实成绩 |
 
-当前最高等级：E0（单测/dry run/本地镜像检查）与题包 E0/E1（本地审计+smoke）；E2/E4 未完成，见 [验证记录](verification.md)。
+当前最高等级：E0（单测/dry run/本地镜像检查）+ E1 的假模型靶题闭环（3/3，mock 平台判定）；真实模型 E2 与平台 E3/E4 未完成（无凭据/未注册/未审核），见 [验证记录](verification.md) 与 [靶题实验记录](lab-experiments.md)。
 
 ## 5. 环境待办
 
