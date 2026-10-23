@@ -1,0 +1,71 @@
+# 协作基线（Git / 环境 / 证据）
+
+更新：2026-10-23。基线提交：`bbde74a chore: establish local prototype baseline`。
+
+## 1. 当前纳入版本控制的内容
+
+已提交：
+
+- `agent/`：CTFY-0001 入口、契约、模型/平台客户端、循环、预算、安全与工具。
+- `author/__init__.py`、`author/generate.py`、`author/prepare.py`：离线 Web 候选题生成与本地验证。
+- `tests/`：契约、集成、可靠性测试（Windows 下 Linux-only 用例跳过）。
+- `scripts/`：本地 dry run、镜像内 Web 工具检查、一键验收。
+- `examples/dry-run/`：无凭据的合成任务。
+- `docs/`：验证记录、规则审计、登录后查阅记录、扩展入口。
+- `Dockerfile`、`.dockerignore`、`.gitattributes`、`requirements.lock`。
+
+不纳入版本控制（见 `.gitignore`）：
+
+- `_research/`、`research/`：公开资料快照与本地研究，非运行代码。
+- `author/generated/`：题包生成物与 smoke 报告，可由 seed 重新生成。
+- `artifacts/`：实验证据（靶题日志、result、experiment.json），按次生成。
+- `__pycache__/`、`*.pyc`、虚拟环境、构建产物。
+- `.env`、`secrets/`、`*.pem`、`*.key`、`*.token`：凭据/密钥永不入库。
+- 日志、`*.tar.gz`、本地数据库。
+
+## 2. 复现命令
+
+Windows（Python 3.14）：
+
+```powershell
+python -X utf8 -m unittest discover -s tests -v
+python -X utf8 scripts/run_local.py
+```
+
+Linux/WSL（有 Docker 时）：
+
+```bash
+python3 -m unittest discover -s tests -v
+docker build --pull=false --platform linux/amd64 -t qutagent:dev .
+ctfy agent check qutagent:dev --json
+bash scripts/verify_local.sh
+```
+
+当前开发机的边界：WSL 命令返回 `E_ACCESSDENIED`，Windows 未安装 Docker；因此本机只能跑进程级 HTTP 靶题与假模型实验，**不能把 Windows 结果当作镜像/容器/真实平台证据**。镜像与容器复跑需在可用的 Linux/Docker 环境执行。
+
+## 3. 提交前检查（队友与 Lead 都适用）
+
+1. `git status --short`：确认没有 `author/generated/`、`artifacts/`、`_research/`、`__pycache__`、密钥文件被加入。
+2. `git diff --cached --stat`：逐文件确认改动属于本次任务；不要混入无关格式化。
+3. 跑测试：Windows 至少 `python -X utf8 -m unittest discover -s tests -v`；涉及 Linux shell/镜像的改动需在 Linux 复跑。
+4. 检查凭据：`git diff --cached` 中不得出现 `sk-`、`ghp_`、`Bearer` 真值、私钥、平台 token；示例 token 只能是 `fixture-*`/`fake-*`。
+5. 检查生成物：题包、tar.gz、实验报告应写到 `artifacts/` 或 `author/generated/`，不入库。
+6. 提交信息说明“改了什么/证据等级”，不要把 mock、smoke、真实平台接受混为一谈。
+
+## 4. 证据等级（写文档时必须标注）
+
+| 等级 | 例子 | 能证明 |
+|---|---|---|
+| E0 静态/模拟 | 单测、mock HTTP、dry run | 代码路径和契约，不证明真实解题 |
+| E1 本地合成靶题 | `labs/` 假模型或真实模型 + 动态 flag | 求解器能在受控目标上完成闭环；仍非比赛平台 |
+| E2 真实授权练习题 | 真实模型在隔离靶题上固定预算运行 | 真实模型解题成功率/用量；非比赛平台 |
+| E3 平台镜像审核 | `ctfy agent check` 通过、平台 operator 审核 | 镜像可被平台调度；不证明题解能力 |
+| E4 平台接受答案 | 比赛/练习平台实际判分记录 | 真实成绩 |
+
+当前最高等级：E0（单测/dry run/本地镜像检查）与题包 E0/E1（本地审计+smoke）；E2/E4 未完成，见 [验证记录](verification.md)。
+
+## 5. 环境待办
+
+- [ ] 在可用 WSL/Docker 环境重跑镜像构建、`ctfy agent check`、`scripts/verify_local.sh`。
+- [ ] 若 WSL 仍不可用，改用一台 Linux amd64 构建机/CI，避免在 Windows 上宣称 Docker 证据。
+- [ ] 赛前复核 CI 中的 Python/CLI 版本与 `requirements.lock`。

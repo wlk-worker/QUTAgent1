@@ -3,8 +3,15 @@ research/
 author/
 tests/
 docs/
+labs/
 artifacts/
 __pycache__/
 *.pyc
 .git/
 *.md
+.dsh-testsupport/
+.tmp-run*/
+tmp*/
+aclprobe-*/
+locked*/
+m700/

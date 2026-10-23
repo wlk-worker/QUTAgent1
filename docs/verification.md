@@ -29,14 +29,14 @@
 
 ## 当前门槛
 
-- G0：公开规则审计及未知项记录已完成；赛道附件仍未找到。
+- G0：公开规则审计及未知项记录已完成；赛道附件仍未找到，已整理可直接发送的 [规则询问清单](rules-request.md)。
 - G1：本地构建、dry run 与官方 `agent check` 已通过。
-- G2：历史记录中的 14 项测试通过；本轮扩展后的 24 项见下节。模拟 HTTP 服务的闭环不是平台验证。
-- G3：真实授权练习题的模型→工具→平台接受答案闭环尚未运行。没有真实接受记录。
-- G4：原创 Web 候选题生成器的 4 个 seed 已通过本地严格审计和 smoke，其中 seed 45 连续 smoke 两次；未上传、未审核。当前结构仍是固定题型的参数化生成，赛事是否将其认作合格的自主出题需正式规则确认。
-- G5：未建立真实练习题的固定开发集/验证集，也没有成对性能比较。
+- G2：Windows 全量测试 **67 项通过（2 项 Linux-only skip）**；包含原有契约/可靠性/集成测试与新增靶题、HTTP 工具、出题/参赛流程测试。模拟 HTTP 闭环不是平台验证。
+- G3：**已运行**进程级授权 Web 靶题 + 假模型完整闭环（dev 3/3，mock 平台接受 3 个动态 flag）；真实模型实验因无 `LLM_*` 凭据明确 `blocked`，**没有真实模型成功率，也没有真实 CTFy 平台接受记录**。
+- G4：出题包生成/审计/smoke 的本地证据仍在；新增 `author/controller.py` 和 `scripts/platform_flow.py`，默认 dry-run、mock 契约测试通过；**未上传、未审核、未注册、未创建 entry**。
+- G5：已建立固定 dev/validation 种子集与统一预算（60s / 8 turns / 8 requests）；仅 fake 链路跑完，真实模型对照尚未运行。
 
-一键重跑本地验收：`bash scripts/verify_local.sh`（需要 `ctfy`、`ctfy-admin`、Docker 与 Compose 在 PATH 上）。
+一键重跑 Windows 本地验收：`python -X utf8 -m unittest discover -s tests -v` + `python -X utf8 scripts/run_lab.py --model fake --set dev`。Linux/Docker 可用时再跑 `bash scripts/verify_local.sh`（需要 `ctfy`、`ctfy-admin`、Docker 与 Compose 在 PATH 上）。
 
 ## 2026-10-23 可靠性与 Web 工具复核
 
@@ -58,3 +58,18 @@
 | WSL `/home/agentfuzz/qutagent-ctfy-venv/bin/ctfy agent check qutagent:dev --json` | `verdict: passed`、`ran_locally: true`、`findings: []`；registry manifest 401 后改查**本地镜像** | CTFY-0001 本地检查通过，不是远程镜像审核或比赛接受 |
 
 本轮按用户要求跳过隔离 Docker 授权 Web 靶题联调入口，因此**假模型驱动靶题实验、真实模型驱动靶题实验均未运行**；没有可报告的解题成功率或真实模型用量。此前入口对模拟 HTTP 平台的测试只检验程序调用链。正式参赛仍需：赛道附件和模型/提交规则确认；隔离授权题的完整求解记录；真实模型在明确时间、轮数和请求预算下的实验；平台对镜像及答案的正式接受。未进行任何平台注册、镜像上传、题包上传或真实答案提交。
+
+## 2026-10-23 隔离靶题、出题控制器与参赛流程复核
+
+本节只记录实际执行过的命令；没有真实账号 token，没有向真实 CTFy 平台发起请求。详细说明见 [靶题实验记录](lab-experiments.md)、[出题上传](authoring-upload.md)、[参赛流程](participation-flow.md)。
+
+| 验证 | 实际命令/结果 | 证据等级与边界 |
+|---|---|---|
+| 全量 Windows 测试 | `python -X utf8 -m unittest discover -s tests -v` → **Ran 67 tests, OK (skipped=2)**，退出 0 | 代码/契约/本地闭环；不是平台审核 |
+| 假模型 Web 靶题 dev 集 | `python -X utf8 scripts/run_lab.py --model fake --set dev` → exit 0，`fake-dev-20261023T064110Z-2f1a50`，3/3 成功，mock 平台接受 3 个动态 flag，wall 6.708s，tokens 19463/591，15 次模型请求；每例 `turns=5`、`http_calls=4`、`stop_reason=done` | 证明 HTTP 工具、真实 `agent/main.py`、模型 HTTP 客户端、平台提交/判定链路可运行；不证明模型能力或真实平台接受 |
+| 真实模型入口 | `python -X utf8 scripts/run_lab.py --model real --set validation` → exit 2，`status=blocked`，缺 `LLM_FLAVOR/LLM_MODEL/LLM_API_KEY`，未发模型请求 | 无真实模型成功率；缺凭据时 fail-closed，不伪造 |
+| 出题控制器 dry-run | `python -X utf8 author/controller.py --seed 46 --dry-run` → exit 0，`network_sent=false`、`uploaded=false`、`platform_reviewed=false`，archive sha256 `12a5cc63…c46d651e`，8 文件 | 本地打包/哈希/报告；未上传、未审核 |
+| 镜像/entry 流程 dry-run | `python -X utf8 scripts/platform_flow.py register-harness ...` / `enter ...` → exit 0，`network sent: False`，报告 `planned_only` | 只有计划请求形状；未注册、未 probe、未创建 entry |
+| 凭据/flag 泄漏扫描 | `artifacts/lab` 与出题报告扫描无 `flag{...}` 明文；mock 提交只存答案 SHA-256 | 仅覆盖本轮实验产物，不等于平台审计 |
+
+环境限制：当前 Windows 无 Docker；WSL 命令返回 `E_ACCESSDENIED`，因此没有做容器级靶题/镜像复跑，也没有重新执行 `ctfy agent check`（此前的 WSL 结果仍是历史证据）。真实模型、真实平台注册/上传/entry 需要用户提供授权凭据与赛道附件；未完成项已列入 [规则询问清单](rules-request.md)。

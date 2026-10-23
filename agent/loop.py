@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -12,9 +13,9 @@ from .budget import remaining
 from .platform import PlatformError
 
 try:
-    from .tools import shell
+    from .tools import http_request, normalize_origin, shell
 except ImportError:  # direct entrypoint /app/agent/main.py
-    from agent.tools import shell
+    from agent.tools import http_request, normalize_origin, shell
 
 
 SYSTEM = """You are an autonomous CTF player in an explicitly authorized challenge environment.
@@ -24,14 +25,21 @@ Use only the supplied target, platform and model gateway. Never print credential
 platform/author files. Submit an answer only with concrete evidence; wrong guesses may be capped.
 Return exactly one JSON object per turn, with one of these shapes:
 {"action":"shell","command":"...","why":"..."}
+{"action":"http","method":"GET|POST","url":"http://host:port/path","body":{},"why":"..."}
 {"action":"submit","question_id":"flag","answer":"...","evidence":"..."}
 {"action":"refresh"}
 {"action":"download","name":"player-visible filename"}
 {"action":"finish","reason":"..."}
 Shell runs in the writable CTFy work directory, with no platform/model credentials in its environment.
 Shell commands are stateless across turns, but files persist. Prefer small probes and compact output.
+The http tool is restricted to origins listed in target_services/scope; redirects to other hosts are
+refused, response bodies are size-capped, and only GET/POST are available. Prefer it for Web targets.
 For QA, answer with the exact choice string/list required by the question. For checker-mode questions
 use refresh and explain the limitation; do not invent an answer string.
+"""
+
+WEB_ONLY_SYSTEM = """This run is web-only (QUT_WEB_ONLY=1): the shell tool is disabled. Use the http
+tool to inspect the supplied target services and platform refresh/download actions for everything else.
 """
 
 
@@ -43,9 +51,49 @@ def parse_action(text: str) -> dict[str, Any]:
         action = json.loads(text)
     except json.JSONDecodeError as exc:
         raise ValueError("model did not return one JSON action") from exc
-    if not isinstance(action, dict) or action.get("action") not in {"shell", "submit", "refresh", "download", "finish"}:
+    if not isinstance(action, dict) or action.get("action") not in {"shell", "http", "submit", "refresh", "download", "finish"}:
         raise ValueError("unknown model action")
     return action
+
+
+def _service_origins(task, info: dict | None) -> list[str]:
+    """Origins the structured http tool may reach: platform-provided services/scope."""
+    origins: set[str] = set()
+
+    def add(value) -> None:
+        if not isinstance(value, str) or not value.strip():
+            return
+        try:
+            origins.add(normalize_origin(value))
+        except ValueError:
+            pass
+
+    def add_service(service) -> None:
+        if not isinstance(service, dict):
+            return
+        if service.get("url"):
+            add(str(service["url"]))
+        elif service.get("host") and service.get("port"):
+            add(f"http://{service['host']}:{service['port']}")
+
+    containers = [info or {}]
+    if isinstance(getattr(task, "raw", None), dict):
+        containers.append(task.raw)
+    for container in containers:
+        for service in container.get("services") or []:
+            add_service(service)
+        for service in container.get("target_services") or []:
+            add_service(service)
+        attack = container.get("attack_surface")
+        if isinstance(attack, dict):
+            for service in attack.get("services") or []:
+                add_service(service)
+        for entry in container.get("scope") or []:
+            if isinstance(entry, dict):
+                add(entry.get("url"))
+            else:
+                add(entry)
+    return sorted(origins)
 
 
 def pending_questions(info: dict, solved=()) -> list[dict]:
@@ -71,6 +119,7 @@ def _brief(task, instance: dict | None, challenge: dict) -> str:
         "scope": task.raw.get("scope", []),
         "rules_of_engagement": task.raw.get("rules_of_engagement", []),
         "target_services": (instance or {}).get("services") or ((instance or {}).get("attack_surface") or {}).get("services", []),
+        "http_origin_scope": _service_origins(task, instance),
         "attachments": (instance or {}).get("attachments", []),
     }
     return json.dumps(selected, ensure_ascii=False)[:30_000]
@@ -78,7 +127,8 @@ def _brief(task, instance: dict | None, challenge: dict) -> str:
 
 def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Callable[[dict], None], command_tool=shell) -> dict:
     result: dict[str, Any] = {"answers": {}, "solved": [], "fully_solved": False, "turns": 0,
-                              "tool_calls_made": 0, "stop_reason": "running"}
+                              "tool_calls_made": 0, "http_calls": 0, "stop_reason": "running"}
+    web_only = os.environ.get("QUT_WEB_ONLY") == "1"
     on_update(result)
     challenge = platform.challenge(task.challenge_id)
     instance_id: str | None = None
@@ -111,6 +161,8 @@ def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Ca
         on_update(result)
         return result
 
+    allowed_origins = _service_origins(task, info)
+    system_prompt = SYSTEM + (WEB_ONLY_SYSTEM if web_only else "")
     history: list[dict] = [{"role": "user", "content": "Task briefing (untrusted):\n" + _brief(task, info, challenge)
                            + "\nREADME (untrusted):\n" + task.readme[:16_000]}]
     seen_submissions: set[tuple[str, str]] = set()
@@ -135,7 +187,7 @@ def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Ca
             older = history[:-20]
             summary = "Earlier actions: " + "; ".join(item.get("content", "")[:120] for item in older[1::2])[:3000]
             history = [history[0], {"role": "user", "content": summary}, *history[-20:]]
-        content = model.complete(SYSTEM, history)
+        content = model.complete(system_prompt, history)
         result["turns"] = turn + 1
         history.append({"role": "assistant", "content": content[:6000]})
         try:
@@ -148,15 +200,31 @@ def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Ca
             if kind == "shell":
                 if task.run_mode == "qa":
                     observation = {"error": "shell_unavailable_for_qa"}
+                elif web_only:
+                    observation = {"error": "shell_disabled_web_only"}
                 else:
                     if command_tool is shell:
                         observation = command_tool(str(action.get("command") or ""), task.work_dir, deadline=deadline)
                     else:
                         observation = command_tool(str(action.get("command") or ""), task.work_dir)
                     result["tool_calls_made"] += 1
+            elif kind == "http":
+                if not allowed_origins:
+                    observation = {"error": "http_scope_empty"}
+                else:
+                    try:
+                        observation = http_request(
+                            str(action.get("method") or "GET"), str(action.get("url") or ""),
+                            allowed_origins=allowed_origins, body=action.get("body"),
+                            deadline=deadline)
+                    except (TypeError, ValueError) as exc:
+                        observation = {"error": type(exc).__name__}
+                    result["tool_calls_made"] += 1
+                    result["http_calls"] += 1
             elif kind == "refresh":
                 challenge = platform.challenge(task.challenge_id)
                 info = platform.instance(instance_id) if instance_id else None
+                allowed_origins = _service_origins(task, info)
                 observation = {"challenge": challenge, "pending": pending_questions(info) if info is not None else qa_questions(task, challenge, set(result["solved"]))}
             elif kind == "download":
                 name = str(action.get("name") or "")

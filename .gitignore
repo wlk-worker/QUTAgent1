@@ -21,4 +21,11 @@ secrets/
 *.db
 .coverage
 htmlcov/
+# DSH/sandbox test artifacts and failed ACL probes at the repo root
+.dsh-testsupport/
+.tmp-run*/
+tmp*/
+aclprobe-*/
+locked*/
+m700/
 

@@ -30,7 +30,7 @@
 | `registration_ends_at` | `2026-11-13T12:00:00Z`（北京时间 20:00） | 报名页最终时限以实时状态为准 |
 | `format` / `challenges_withheld` | `questions` / `true` | 题目数量、类别和具体题未公开 |
 | `internet_policy` / `tcp_access` | `deny` / `tls_sni` | 镜像必须离线具备依赖，TCP 接入以题目给出的服务为准 |
-| `max_instances_per_team_effective` | 3 | 运行时尊重平台响应和容量限制 |
+| `max_instances_per_team_effective` | 1（2026-10-23 复核；10-22 快照为 3） | 运行时尊重平台响应和容量限制；不要并发起多个实例 |
 | `authoring_windows` | 11 月 21 日 10–12、14–16、18–20 时 | 旧快照中的每窗口一次上传不能作为当前承诺；10 月 23 日 UI 显示最近 2 小时上传上限 5 次、待审最多 3，下一窗口为 11 月 21 日 10:00。窗口配额与上传频率可能是不同限制，尚未核实其关系 |
 | `entrants_are_agents` | `false` | 与规则页“AI Agent 独立参与”的文字看似不一致，不能据此推断 entry/成绩归属方式 |
 | `ordering` | `flags_solved`、`solved`、`last_solve_at` | 不等于确认所有奖项只按该榜计算 |
@@ -53,4 +53,12 @@
 - 2026-10-23 的最新求解器测试为 WSL 24/24 通过，含入口对模拟模型与平台的 HTTP 闭环、短预算、凭据过滤和 Linux 进程组；原先的 14 项是此前快照。没有真实平台接受答案的证据，详见 [验证记录](verification.md)。
 - `document-desk-42/43/44` 三个候选题包由 CTFy 0.7.0 的 `ctfy-admin challenge audit --strict` 检查为 0 issues，`ctfy-admin challenge smoke` 为 3 ok、0 failed；离线流程另生成 seed 45，并严格审计一次、动态 smoke 两次通过。官网 CTFY-0002 文档列出的 `ctfy authoring check/smoke --local` 子命令在当前 PyPI 0.7.0 CLI 中不存在，不能声称执行过它们。
 - 登录后的赛事说明页仅以文字提及“智能体赛道附件中的赛事规则文档”，比赛详情、队伍、消息、出题页未显示该附件入口；当前报名状态显示等待主办方审核，附件是否在审核后开放尚不能确认。主办方新闻跳转的页面被浏览器安全策略阻止，未绕过。详情见 [验证记录](verification.md)；G3、G5 仍未验证。
+
+## 2026-10-23 匿名 API 复核
+
+- 报名数由 10-22 的 109 增至 **140**（赛事说明中的上限为 150 支）；报名审核与截止时间未变。
+- `max_instances_per_team_effective` 由 3 变为 **1**：agent 不应并发创建实例，遇到容量错误只能退避/串行。
+- 比赛说明附件仍为空（`/competitions/{id}/attachments` 返回空列表），`handbook_updated_at` 仍为 2026-10-20；不能在代码中硬编码“附件不存在”或“审核后必然开放”。
+- 出题页的实际 UI 曾显示“最近 2 小时最多 5 次上传、最多 3 个待审”，而公开配置快照为“每窗口 1 次、待审 0（平台默认）”；二者可能是不同维度，**不得把任一数字当作计分题数承诺**。赛时以页面实时值和正式附件为准。
+- 规则附件、模型额度、镜像提交截止、entry 与奖项归属仍是阻塞项。最小问询清单与可直接发送的询问文本见 [规则询问清单](rules-request.md)。
 

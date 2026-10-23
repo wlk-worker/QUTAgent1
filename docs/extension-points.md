@@ -13,15 +13,17 @@
 | `agent/contract.py`、`agent/main.py`、`Dockerfile` | CTFY-0001 输入输出、入口和异常结果 | 本地 dry run、契约测试、官方镜像检查 |
 | `agent/platform.py` | 平台 REST 适配与反馈、轮询 | 用官方标准/当前 SDK 对照请求字段，跑模拟接口测试 |
 | `agent/model.py`、`agent/loop.py`、`agent/state.py` | 模型调用、动作决策、完成判定 | 注入假模型/假平台测试；不得从私人密钥回退，不得把空待答队列当成功 |
-| `agent/budget.py`、`agent/security.py`、`agent/tools.py` | 总预算、输出脱敏、命令执行与进程组清理 | 在 Linux 跑慢请求、假密钥、超时子进程和大输出测试 |
-| `author/` | 独立出题候选包，尚非赛时出题控制器 | 严格审计与动态 smoke；不能称为比赛审核 |
+| `agent/budget.py`、`agent/security.py`、`agent/tools.py` | 总预算、输出脱敏、命令执行/进程组清理、结构化 HTTP（origin 白名单/禁跳转/截断） | 在 Linux 跑慢请求、假密钥、超时子进程和大输出测试；Windows 跑 `test_web_tool.py` |
+| `labs/`、`scripts/run_lab.py` | 进程级 Web 靶题、mock CTFy、假模型、固定 dev/validation 预算 | `python -X utf8 scripts/run_lab.py --model fake --set dev`；真实模型无凭据时只能 `blocked` |
+| `author/controller.py` | 赛时出题流程：生成/复用、本地检查、确定性打包、可选上传、只读轮询 | `--dry-run` 零请求；mock 契约测试；未经授权不真实上传 |
+| `scripts/platform_flow.py` | 镜像注册、probe、状态、独立 entry；默认 dry-run | dry-run 零请求、fail-closed 预检、mock 契约测试；不能声称已注册/审核 |
 
 优先通过模块边界添加能力，保持 `agent/main.py` 的入口稳定。对尚未实现的 `run_mode` 明确返回不支持；不要在没有赛道规则时猜测赛时出题上传协议。新平台字段要写明对应的官网标准版本，保留可复现的模拟测试。
 
-队友复核顺序：`python3 -m unittest discover -s tests -v` → `python3 scripts/run_local.py` → `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` → `ctfy agent check qutagent:dev --json`。镜像基础 Web 工具可用 `scripts/check_web_tools.py` 按 README 中的 Docker 命令单独检查。`agent/state.py` 新增平台状态映射时，应同时补误判完成的回归场景；`agent/platform.py` 新增 POST 时，应先设计响应不确定后的只读核对方法。
+队友复核顺序（Windows）：`python -X utf8 -m unittest discover -s tests -v` → `python -X utf8 scripts/run_local.py` → `python -X utf8 scripts/run_lab.py --model fake --set dev` → `python -X utf8 author/controller.py --seed 46 --dry-run`。Linux/Docker 可用时再加：`docker build --pull=false --platform linux/amd64 -t qutagent:dev .` → `ctfy agent check qutagent:dev --json`；镜像基础 Web 工具可用 `scripts/check_web_tools.py` 按 README 中的 Docker 命令单独检查。`agent/state.py` 新增平台状态映射时，应同时补误判完成的回归场景；`agent/platform.py` 新增 POST 时，应先设计响应不确定后的只读核对方法；`labs/` 的新用例必须保持“无凭据时 blocked、不伪造成功率”。
 
 ## 当前适配层和待确认点
 
-`agent/contract.py` 是 CTFY-0001 v2 文件边界；`agent/platform.py` 是已公开 REST/SDK 字段的薄适配层。当前求解循环仅处理 `instance` 和 `qa`，其余模式在 `agent/main.py` 返回 `unsupported_or_missing_task`。`author/` 只做赛前离线候选题包生成和验证，没有赛时上传接口。
+`agent/contract.py` 是 CTFY-0001 v2 文件边界；`agent/platform.py` 是已公开 REST/SDK 字段的薄适配层。当前求解循环仅处理 `instance` 和 `qa`，其余模式在 `agent/main.py` 返回 `unsupported_or_missing_task`。`labs/` 是进程级实验，不是比赛运行环境；`author/controller.py` 与 `scripts/platform_flow.py` 提供赛时出题/镜像/entry 的受控代码路径，默认 dry-run，真实操作仍受账号审核与赛道规则限制。
 
 赛事说明提及的智能体赛道附件尚未核实。镜像注册/提交方式、模型与时间额度、是否强制赛时自主出题及上传接口、解题题型范围、计分与奖项规则，应在拿到附件或平台正式通知后逐项落实；清单见 [规则审计](rules-audit.md)。任何与公开 CTFY-0001/0002 不同的赛道专属流程，先补依据，再改适配层。

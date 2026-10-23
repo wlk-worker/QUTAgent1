@@ -6,7 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
+import uuid
 from pathlib import Path
 
 
@@ -15,8 +15,17 @@ EXAMPLE = ROOT / "examples" / "dry-run"
 
 
 def main() -> int:
-    with tempfile.TemporaryDirectory(prefix="qutagent-dry-run-") as directory:
-        work_dir = Path(directory)
+    # Keep the scratch directory inside the repository on purpose: the DSH
+    # Windows sandbox can make its own %TEMP% children unreadable to the
+    # sandboxed process. Cleanup is best-effort; a cleanup failure must not
+    # turn a successful dry run into a non-zero exit.
+    scratch = ROOT / "artifacts" / "local-run"
+    scratch.mkdir(parents=True, exist_ok=True)
+    # 0o750 rather than tempfile's 0o700: the DSH Windows sandbox maps a 0o700
+    # directory to an ACL its own child processes cannot write through.
+    work_dir = scratch / f"qutagent-dry-run-{uuid.uuid4().hex}"
+    work_dir.mkdir(mode=0o750)
+    try:
         shutil.copy2(EXAMPLE / "task.json", work_dir / "task.json")
         shutil.copy2(EXAMPLE / "README.md", work_dir / "README.md")
 
@@ -41,6 +50,8 @@ def main() -> int:
             return 1
         print("Local dry run passed. This does not validate a real challenge or image registration.")
         return 0
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":
