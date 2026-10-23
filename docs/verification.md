@@ -50,14 +50,14 @@
 
 | 验证 | 实际结果 | 边界 |
 |---|---|---|
-| Windows `python -X utf8 -m unittest discover -s tests -v` | 24 项执行，22 通过、2 跳过（Linux 命令及其入口）；退出 0 | 含状态、假密钥、短预算、慢响应、请求上限、POST 不确定结果 |
+| Windows `python -X utf8 -m unittest discover -s tests -v` | 当轮历史快照：24 项执行，22 通过、2 跳过（Linux 命令及其入口）；退出 0；最新全量为 67 项，见下节 | 含状态、假密钥、短预算、慢响应、请求上限、POST 不确定结果 |
 | WSL `python3 -m unittest discover -s tests -v` | 24/24 通过，退出 0 | Linux 进程组、命令输出上限和模拟 HTTP 闭环已执行；仍不等于真实靶题解题 |
 | Windows `python -X utf8 scripts/run_local.py` | `dry_run`、`fully_solved:false`，退出 0 | 入口/文件契约检查 |
 | WSL `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` | 成功；本地 image ID `sha256:20e17c0933e13d3dc04d41599f22a56f433710e7b363b68507e8563f8371a3b3` | 构建期下载 apt 软件包；评测期无需下载 |
 | 镜像内 `scripts/check_web_tools.py` | `web_tool_smoke_passed`；UID 10001，基础工具可用 | 自包含 HTTP 会话和文件写入；未连接授权靶题 |
 | WSL `/home/agentfuzz/qutagent-ctfy-venv/bin/ctfy agent check qutagent:dev --json` | `verdict: passed`、`ran_locally: true`、`findings: []`；registry manifest 401 后改查**本地镜像** | CTFY-0001 本地检查通过，不是远程镜像审核或比赛接受 |
 
-本轮按用户要求跳过隔离 Docker 授权 Web 靶题联调入口，因此**假模型驱动靶题实验、真实模型驱动靶题实验均未运行**；没有可报告的解题成功率或真实模型用量。此前入口对模拟 HTTP 平台的测试只检验程序调用链。正式参赛仍需：赛道附件和模型/提交规则确认；隔离授权题的完整求解记录；真实模型在明确时间、轮数和请求预算下的实验；平台对镜像及答案的正式接受。未进行任何平台注册、镜像上传、题包上传或真实答案提交。
+当轮（2026-10-23 早先）按用户要求跳过隔离 Docker 授权 Web 靶题联调入口，因此当时**假模型驱动靶题实验、真实模型驱动靶题实验均未运行**；该历史结论已被下节替代：后续已运行进程级靶题 + 假模型闭环，真实模型仍因无凭据 blocked。此前入口对模拟 HTTP 平台的测试只检验程序调用链。正式参赛仍需：赛道附件和模型/提交规则确认；真实模型在明确时间、轮数和请求预算下的实验；平台对镜像及答案的正式接受。未进行任何平台注册、镜像上传、题包上传或真实答案提交。
 
 ## 2026-10-23 隔离靶题、出题控制器与参赛流程复核
 

@@ -101,7 +101,7 @@ python -X utf8 scripts/run_lab.py --model real --set validation
 python -X utf8 -m unittest discover -s tests -v
 ```
 
-结果：`Ran 67 tests`，`OK (skipped=2)`，退出码 `0`。跳过的 2 项是既有的 Linux-only shell/进程组测试；新增的 `test_web_tool.py`（10 项）与 `test_lab.py`（7 项）全部执行并通过，覆盖 origin 允许/拒绝、截断、超时、禁止跳转、`QUT_WEB_ONLY`、假模型完整闭环、turn 预算、真实模型 blocked、flavor 透传、动态 flag 与编码穿越。新增测试不使用 `tempfile`/持久凭据，也不访问真实平台。
+结果：`Ran 67 tests`，`OK (skipped=2)`，退出码 `0`。跳过的 2 项是既有的 Linux-only shell/进程组测试；新增的 `test_web_tool.py`（10 项）与 `test_lab.py`（7 项）全部执行并通过，覆盖 origin 允许/拒绝、截断、超时、禁止跳转、`QUT_WEB_ONLY`、假模型完整闭环、turn 预算、真实模型 blocked、flavor 透传、动态 flag 与编码穿越。新增测试不使用持久凭据，也不访问真实平台；临时文件由测试/实验目录管理。
 
 ## 证据文件说明
 
