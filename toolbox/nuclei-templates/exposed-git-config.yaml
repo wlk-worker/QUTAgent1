@@ -1,0 +1,24 @@
+id: exposed-git-config
+
+info:
+  name: Exposed .git/config
+  author: qutagent
+  severity: medium
+  description: A readable .git/config leaks repository metadata and sometimes credentials.
+  tags: exposure,git,config
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.git/config"
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "[core]"
+          - "repositoryformatversion"
+        condition: and
+      - type: status
+        status:
+          - 200

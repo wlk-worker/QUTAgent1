@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# ctf-disasm <binary> [symbol|address]
+# Bounded disassembly of a local ELF. objdump first, radare2 as fallback.
+# The symbol argument is validated against a strict character set so it cannot
+# inject radare2 commands. Output is truncated on purpose.
+set -u
+MAX_LINES=${CTF_DISASM_MAX_LINES:-400}
+MAX_BYTES=${CTF_DISASM_MAX_BYTES:-20000}
+TIMEOUT_S=60
+
+usage() {
+    printf 'usage: ctf-disasm <binary> [symbol|address]\n'
+    printf 'Disassemble an ELF (bounded): objdump -d, radare2 fallback.\n'
+    printf 'Output capped at %s lines / %s bytes.\n' "$MAX_LINES" "$MAX_BYTES"
+}
+die() { printf 'ctf-disasm: error: %s\n' "$*" >&2; exit 2; }
+
+case "${1:-}" in
+    -h|--help) usage; exit 0 ;;
+esac
+[ "$#" -ge 1 ] && [ "$#" -le 2 ] || { usage >&2; exit 2; }
+bin=$1
+symbol=${2:-}
+
+[ -e "$bin" ] || die "no such file: $bin"
+[ -f "$bin" ] || die "not a regular file: $bin"
+[ -r "$bin" ] || die "not readable: $bin"
+command -v file >/dev/null 2>&1 || die "file(1) not installed"
+ftype=$(file -b -- "$bin" 2>/dev/null) || die "file(1) failed on: $bin"
+case "$ftype" in
+    *ELF*) : ;;
+    *) die "not an ELF file ($ftype)" ;;
+esac
+
+if [ -n "$symbol" ]; then
+    case "$symbol" in
+        *[!A-Za-z0-9_.$@:+-]*) die "invalid symbol/address characters: $symbol" ;;
+    esac
+    [ "${#symbol}" -le 128 ] || die "symbol/address too long"
+fi
+
+command -v objdump >/dev/null 2>&1 || die "objdump (binutils) not installed"
+out=""
+if [ -n "$symbol" ]; then
+    out=$(timeout "$TIMEOUT_S" objdump -d --disassemble="$symbol" -- "$bin" 2>&1) || out=""
+else
+    out=$(timeout "$TIMEOUT_S" objdump -d --no-show-raw-insn -- "$bin" 2>&1) || out=""
+fi
+# objdump prints a header and exits 0 even when the symbol is absent; treat an
+# empty disassembly body as "not found" and try radare2.
+if [ -z "$out" ] || ! printf '%s' "$out" | grep -q '^[[:space:]]*[0-9a-f][0-9a-f]*:'; then
+    if command -v r2 >/dev/null 2>&1; then
+        if [ -n "$symbol" ]; then
+            out=$(timeout "$TIMEOUT_S" r2 -q -e scr.color=0 \
+                    -c "aaa; pdf @ $symbol" -- "$bin" 2>&1) || out=""
+        else
+            out=$(timeout "$TIMEOUT_S" r2 -q -e scr.color=0 \
+                    -c "aaa; afl" -- "$bin" 2>&1) || out=""
+            [ -n "$out" ] && out="radare2 function list (pass a symbol for pdf):
+$out"
+        fi
+    fi
+fi
+
+[ -n "$out" ] || die "no disassembly produced for: $bin"
+printf 'target: %s\n' "$bin"
+[ -n "$symbol" ] && printf 'symbol: %s\n' "$symbol"
+printf '%s\n' "$out" | head -n "$MAX_LINES" | head -c "$MAX_BYTES"
+if [ "$(printf '%s\n' "$out" | wc -l)" -gt "$MAX_LINES" ] \
+   || [ "$(printf '%s' "$out" | wc -c)" -gt "$MAX_BYTES" ]; then
+    printf '\n[ctf-disasm: output truncated]\n'
+fi

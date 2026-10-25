@@ -132,7 +132,7 @@ CTFY-0002 标准页面写的是 `ctfy authoring check` / `ctfy authoring smoke -
 ## 本轮实际验证命令与结果
 
 - `python -X utf8 -m unittest discover -s tests -p "test_authoring_flow.py" -v`：26/26 通过；本机 `python` 是 `python314._pth` 隔离模式，点号 `-m unittest tests.test_authoring_flow` 不能 import 仓库包，需用 `discover`（或在普通非隔离 Python 下运行）。
-- `python -X utf8 -m unittest discover -s tests -v`（lab 任务合入后复跑）：**67 项，OK（skipped=2）**；新增的 26 项契约测试、既有 `test_contract`/`test_reliability`、`test_lab`/`test_web_tool` 全部通过，仅既有 2 项 Linux-only skip。
+- `python -X utf8 -m unittest discover -s tests -v`（求解器/工具链合入后复跑）：**126 项，OK（skipped=2）**；出题/参赛流程 26 项、既有 contract/reliability、靶题/HTTP/MCP/skills 测试全部通过，仅既有 2 项 Linux-only skip。
 - 上述命令的前提：本机 PATH 上的 `python` 使用 `python314._pth`（隔离模式，`ignore_environment=1`、`safe_path=True`），不能直接 import 仓库包；`discover -s tests` 会自行加入测试目录，测试模块再显式加入仓库根目录。`tests/test_authoring_flow.py` 顶部另有一个仅 Windows 生效的测试环境兼容 shim：DSH 沙箱会把 POSIX mode `0o700` 映射成沙箱进程自己不可写的 ACL，导致 `tempfile` 目录不可用；shim 只把该模式改为 `0o750`，不改变产品代码，也不改变测试断言。
 
 **结论：未上传、未审核。** 本文件中的任何“通过”均指本地代码/契约或本地 CLI 检查，除非明确写出平台响应；当前没有平台响应。

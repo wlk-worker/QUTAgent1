@@ -1,6 +1,6 @@
 # QUTAgent：TPCTF 2026 / CTFy 原型
 
-这是 CTFY-0001 求解镜像、CTFY-0002 Web 出题包生成器、进程级 Web 靶题联调器与出题/参赛流程控制器的早期实现。**官方镜像本地检查已通过；4 个不同 seed 的题包在 WSL 本地严格审计和动态 smoke 通过；新增进程级 Web 靶题 + 假模型 3/3 闭环，真实模型实验因无凭据明确 `blocked`；尚无真实比赛解题成绩、镜像审核、题包审核或平台接受记录。**求解器当前已为 `instance`、`qa` 加入保守的完成判定、统一时间预算、结构化 HTTP 工具和 Linux 命令进程组清理。规则与未确认事项见 [规则审计](docs/rules-audit.md) 和 [规则询问清单](docs/rules-request.md)，实测命令与证据等级见 [验证记录](docs/verification.md) 和 [靶题实验记录](docs/lab-experiments.md)。
+这是 CTFY-0001 求解镜像、CTFY-0002 Web 出题包生成器、进程级 Web 靶题联调器与出题/参赛流程控制器的可用原型。**求解器已融合 SWE-agent v0.7、ctf-agent、Koshary、AWE、PwnAI 的分类 playbook/格式纠错/循环检测/历史压缩/HTTP 会话/MCP 能力；镜像已装入 Web/Pwn/AI 安全工具链（r2、pwntools、gdb、one_gadget、seccomp-tools、sqlmap、ffuf、nuclei、Chromium 等），WSL Docker 构建 3.57 GB（内容 0.88 GiB），`ctfy agent check` 与 required 工具检查均通过，镜像内 126 项测试通过；镜像级假模型靶题 3/3 闭环。真实模型实验因无凭据仍 `blocked`；尚无真实平台解题成绩、镜像审核、题包审核或平台接受记录。**规则与未确认事项见 [规则审计](docs/rules-audit.md) 和 [规则询问清单](docs/rules-request.md)，求解器能力映射见 [solver skills](docs/solver-skills.md)，工具链见 [toolchain](docs/toolchain.md)，实测证据见 [验证记录](docs/verification.md) 和 [靶题实验记录](docs/lab-experiments.md)。
 
 ## 最快本地启动
 
@@ -14,29 +14,32 @@ python scripts/run_local.py
 
 ## 目录
 
-- `agent/`：读取任务与环境、调用模型网关和平台 API、执行有限时长的命令/结构化 HTTP、写 `result.json`。
-- `labs/`：纯标准库的授权 Web 靶题、mock CTFy 平台、OpenAI 兼容假模型和进程级实验 runner。
+- `agent/`：读取任务与环境、调用模型网关和平台 API、分类 playbook、shell/HTTP/MCP 工具、写 `result.json`。
+- `agent/skills.py`：web/pwn/ai/misc/qa 分类和各类 playbook；`agent/mcp.py`：MCP 客户端；`agent/tools.py`：有状态 HTTP 会话。
+- `labs/`：纯标准库的授权 Web 靶题、mock CTFy 平台、OpenAI 兼容假模型和实验 runner。
+- `toolbox/`：镜像内 `ctf-checksec`、`ctf-disasm`、`ctf-debug`、`ctf-strings` 辅助命令与 nuclei 起步模板。
 - `author/generate.py`、`author/prepare.py`：以 seed 生成原创 Web 题候选包，并做本地审计/smoke 验证。
 - `author/controller.py`：赛时出题流程（生成/复用 → 本地检查 → 确定性打包 → 可选上传 → 只读轮询）；默认 dry-run。
-- `scripts/run_lab.py`：固定 dev/validation 预算的完整靶题联调入口。
+- `scripts/run_lab.py`：固定 dev/validation 预算的完整靶题联调入口；`--llm-env-file` 可加载本地 LLM_* 文件（值不回显）。
 - `scripts/platform_flow.py`：镜像注册、probe、状态读取和独立 agent entry 的安全流程；默认 dry-run。
-- `tests/`：不接触真实平台的契约、靶题、出题/参赛流程测试（当前 67 项，2 项 Linux-only skip）。
+- `tests/`：不接触真实平台的契约、靶题、抓取会话、MCP、出题/参赛流程测试（当前 126 项，2 项 Linux-only skip）。
 - `examples/dry-run/`、`scripts/run_local.py`：无需凭据的本地入口检查。
-- `scripts/check_web_tools.py`：在镜像内验证 HTTP 会话、HTML/JSON/编码处理、写入分析文件及基础命令。
-- `_research/ctfy/`：公开资料的本地快照，不是运行代码，也不是权威的实时规则。
-- `docs/lab-experiments.md`、`docs/authoring-upload.md`、`docs/participation-flow.md`：本轮新增能力的实测记录、命令和证据边界。
+- `scripts/check_web_tools.py`、`scripts/check_toolchain.py`：镜像内基础 Web 工具/完整工具链检查。
+- `_research/ctfy/`、`_research/repos/`：公开标准与参考项目快照，不是运行代码，也不是权威实时规则。
+- `docs/solver-skills.md`、`docs/reference-projects.md`、`docs/toolchain.md`、`docs/lab-experiments.md`、`docs/authoring-upload.md`、`docs/participation-flow.md`：能力映射、参考项目来源、工具链和实测证据边界。
 - `docs/rules-request.md`：可直接发给组委会的赛道规则询问清单。
 - `docs/git-baseline.md`：版本控制范围、凭据排除规则和复现命令。
 
 ## 已验证的本地命令
 
-Windows（当前开发机，无 Docker/WSL）：
+Windows（当前开发机）：
 
 ```powershell
-python -X utf8 -m unittest discover -s tests -v          # 67 项，OK (skipped=2)
+python -X utf8 -m unittest discover -s tests -v          # 126 项，OK (skipped=2)
 python -X utf8 scripts/run_local.py                      # 入口/dry-run 契约
 python -X utf8 scripts/run_lab.py --model fake --set dev # 靶题 + 假模型 3/3
 python -X utf8 scripts/run_lab.py --model real --set validation  # 无 LLM_* 时 blocked，不伪造
+python -X utf8 scripts/run_lab.py --model real --set validation --llm-env-file artifacts/llm.env  # 可选的本地凭据文件
 python -X utf8 author/controller.py --seed 46 --dry-run  # 出题 dry-run，零网络
 python -X utf8 scripts/platform_flow.py register-harness --id qutagent `
   --image registry.example/qutagent:dev --display-name QUTAgent --version dev
@@ -49,6 +52,8 @@ cd /mnt/c/Users/lenovo/Desktop/QUTAgent
 python3 -m unittest discover -s tests -v
 docker build --pull=false --platform linux/amd64 -t qutagent:dev .
 ctfy agent check qutagent:dev --json
+docker run --rm --entrypoint python qutagent:dev /app/scripts/check_toolchain.py
+docker run --rm --network none --entrypoint python qutagent:dev /app/scripts/check_toolchain.py --quiet
 docker run --rm --mount type=bind,src="$PWD/scripts/check_web_tools.py",dst=/tmp/check_web_tools.py,readonly --entrypoint python qutagent:dev /tmp/check_web_tools.py
 ctfy-admin challenge audit --all --challenges-dir author/generated --strict --json
 ctfy-admin challenge smoke --all --challenges-dir author/generated --ephemeral-ports --jobs 2 --timeout 180
@@ -72,10 +77,10 @@ python3 author/prepare.py --smoke-runs 2
 
 ## 下一阶段
 
-1. **真实模型实验**：`scripts/run_lab.py --model real --set validation` 需要设置 `LLM_FLAVOR`、`LLM_MODEL`、`LLM_API_KEY`（可选 `LLM_BASE_URL`）；当前无凭据，故只有 `blocked` 记录，没有真实成功率。
-2. **容器级复跑**：在可用 WSL/Docker 环境重新构建镜像、跑 `ctfy agent check` 与 `scripts/verify_local.sh`；本机 WSL 返回 `E_ACCESSDENIED`、未安装 Docker，不能把 Windows 进程级结果当作容器证据。
-3. **平台流程**：`scripts/platform_flow.py` 与 `author/controller.py` 默认 dry-run；真实镜像注册/probe/entry/题包上传需要账号 token、运营方审核与赛道规则授权，当前均未发生。
-4. **赛道规则**：附件仍未取得；按 [规则询问清单](docs/rules-request.md) 向组委会确认模型额度、运行限制、镜像截止、出题计分/窗口与 entry/奖项归属。
+1. **真实模型实验**：`scripts/run_lab.py --model real --set validation` 需要 `LLM_FLAVOR`、`LLM_MODEL`、`LLM_API_KEY`（可选 `LLM_BASE_URL`），也可用 `--llm-env-file artifacts/llm.env` 从 gitignored 本地文件加载；当前无凭据，故只有 `blocked` 记录，没有真实成功率。
+2. **平台流程**：`scripts/platform_flow.py` 与 `author/controller.py` 默认 dry-run；真实镜像注册/probe/entry/题包上传需要账号 token、运营方审核与赛道规则授权，当前均未发生。
+3. **赛道规则**：附件仍未取得；按 [规则询问清单](docs/rules-request.md) 向组委会确认模型额度、运行限制、镜像截止、出题计分/窗口与 entry/奖项归属。
+4. **镜像固定**：当前基础镜像为浮动 `python:3.11-slim`，赛前建议按 digest 固定；真实模型/平台验证后再做最终重建。
 
 不要把本地 smoke、mock 平台判定或 dry-run 计划视为平台审核/比赛接受。
 
@@ -96,11 +101,11 @@ python3 author/prepare.py --smoke-runs 2
 
 本项目不自动读取 `.env` 文件，也不在仓库中存放真实凭据。普通评测的地址、密钥及题目由平台注入；请勿把本地合成 dry run 当作真实平台任务。
 
-当前求解器只执行 `instance`、`qa` 两种模式；模型以 JSON 动作驱动 shell、结构化 HTTP、提交、刷新和附件下载。其他模式会记录不支持。`fully_solved` 只在平台明确确认整题完成，或已知问题全部正确且平台任务明确给出 `gated_questions=0` 时为真；模型提前结束、轮数耗尽、无待答问题均不算完成。`solved` 保留平台确认正确的问题，但最终计分仍以平台成绩记录为准。
+当前求解器只执行 `instance`、`qa` 两种模式；模型以 JSON 动作驱动 shell、有状态 HTTP（Cookie/同源重定向）、MCP、提交、刷新和附件下载，并按 category 注入 Web/Pwn/AI/Misc/QA playbook。其他模式会记录不支持。`fully_solved` 只在平台明确确认整题完成，或已知问题全部正确且平台任务明确给出 `gated_questions=0` 时为真；模型提前结束、轮数耗尽、无待答问题均不算完成。`solved` 保留平台确认正确的问题，但最终计分仍以平台成绩记录为准。
 
 Linux shell 使用环境变量允许列表，只保留运行需要的 PATH、语言和临时目录等变量，不继承平台或模型密钥；超时和命令结束时清理该命令进程组，限制实际采集的 stdout/stderr 字节数。结果和事件记录会按已知密钥值脱敏。**环境过滤不是进程隔离**：同容器内的 `/proc`、共享文件和网络权限仍由运行环境决定，不能把此措施解释为密钥或目标范围的完整防护。HTTP 请求的总预算可令调用方及时返回；极慢的后台请求线程可能晚些才退出，故超时后的 POST 按“结果不确定”处理，不自动重试。正式使用前仍需授权靶题与比赛平台联调。
 
-镜像在构建期安装 `curl`、`jq`、`file`、CA 证书；HTTP 会话、HTML/JSON、编码解码使用 Python 3.11 标准库，版本清单保存在镜像内 `/app/tool-versions.txt`。不在评测运行时下载软件。当前有**进程级** Web 靶题联调（非 Docker/容器级），但没有集成 Pwn/逆向工具链，也没有运行真实模型解题实验（缺凭据）；这些能力与正式赛道细则仍是后续工作。
+镜像在构建期安装 Web/Pwn/AI 安全工具链（pwntools、gdb、r2、one_gadget、seccomp-tools、sqlmap、ffuf、nuclei、Chromium、mcp 等），版本清单保存在 `/app/tool-versions.txt`；评测期不下载软件。当前已有**镜像内** 126 项测试与假模型 3/3 靶题闭环（`labs/` 仍是进程级隔离，不是容器级），但真实模型解题实验因缺凭据仍为 `blocked`，平台注册/审核/接受答案仍未发生；这些能力与正式赛道细则仍是后续工作。
 
 ## 评测约束
 

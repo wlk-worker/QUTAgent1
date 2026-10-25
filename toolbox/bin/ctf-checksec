@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# ctf-checksec <binary>
+# Print a bounded ELF hardening summary for one local file.
+# Primary: pwntools `pwn checksec`. Fallback: readelf header/program headers.
+# Never executes the target. Output is truncated on purpose.
+set -u
+MAX_BYTES=${CTF_CHECKSEC_MAX_BYTES:-6000}
+TIMEOUT_S=30
+
+usage() {
+    printf 'usage: ctf-checksec <binary>\n'
+    printf 'Bounded ELF hardening summary (pwntools checksec, readelf fallback).\n'
+    printf 'Output is capped at %s bytes. Never executes the target.\n' "$MAX_BYTES"
+}
+die() { printf 'ctf-checksec: error: %s\n' "$*" >&2; exit 2; }
+
+[ "$#" -eq 1 ] || { usage >&2; exit 2; }
+case "$1" in -h|--help) usage; exit 0 ;; esac
+bin=$1
+[ -e "$bin" ] || die "no such file: $bin"
+[ -f "$bin" ] || die "not a regular file: $bin"
+[ -r "$bin" ] || die "not readable: $bin"
+command -v file >/dev/null 2>&1 || die "file(1) not installed"
+
+ftype=$(file -b -- "$bin" 2>/dev/null) || die "file(1) failed on: $bin"
+case "$ftype" in
+    *ELF*) : ;;
+    *) die "not an ELF file ($ftype)" ;;
+esac
+
+out=""
+if command -v pwn >/dev/null 2>&1; then
+    out=$(timeout "$TIMEOUT_S" pwn checksec --file "$bin" 2>&1) || out=""
+fi
+
+if [ -z "$out" ]; then
+    command -v readelf >/dev/null 2>&1 || die "readelf not installed"
+    out=$(timeout "$TIMEOUT_S" readelf -h -l -d -- "$bin" 2>&1) \
+        || die "readelf failed on: $bin"
+    out="${out}
+readelf fallback: pwntools checksec unavailable; showing header/program headers/dynamic section.
+Check PIE/NX/RELRO/CANARY manually from the output above."
+fi
+
+printf 'target: %s\n' "$bin"
+printf 'type: %s\n' "$ftype"
+printf '%s\n' "$out" | head -c "$MAX_BYTES"
+if [ "$(printf '%s' "$out" | wc -c)" -gt "$MAX_BYTES" ]; then
+    printf '\n[ctf-checksec: output truncated at %s bytes]\n' "$MAX_BYTES"
+fi

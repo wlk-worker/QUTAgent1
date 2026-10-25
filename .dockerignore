@@ -7,8 +7,11 @@ labs/
 artifacts/
 __pycache__/
 *.pyc
+scripts/__pycache__/
+toolbox/__pycache__/
 .git/
 *.md
+*.log
 .dsh-testsupport/
 .tmp-run*/
 tmp*/

@@ -9,11 +9,11 @@
 | 假模型 + mock 平台 + 本地靶题闭环（3/3） | HTTP 工具、`loop.py` 动作分发、`model.py` 的 OpenAI 兼容客户端、`platform.py` 的实例/提交路径整体可运行；mock 平台按动态 flag 真实判定 | 模型解题能力、真实 CTFy 平台会接受答案、真实比赛成绩 |
 | 本地靶题被路径穿越攻破 | 靶题实现与“编码后可绕过朴素前缀检查”的利用链符合设计 | 真实题目可解，或真实环境的隔离强度 |
 | `--model real` 返回 `blocked`（退出码 2） | 无凭据时不伪造结果、不读取私有 key、不发起模型请求 | 真实模型的任何成功率/用量 |
-| 67 项单元/集成测试通过 | Windows 上不依赖 Linux/Docker/WSL 的调用链与边界行为 | 官方镜像检查、平台审核或比赛接受 |
+| 126 项单元/集成测试通过 | Windows 与镜像内 Linux 的调用链与边界行为 | 官方镜像检查、平台审核或比赛接受 |
 
 ## 实验环境与隔离限制（重要）
 
-- Windows 主机，Python 3.14.6（`experiment.json` 记录 `platform: win32`）；无 Docker；WSL 调用返回 `E_ACCESSDENIED`，**整个实验不依赖 Linux/Docker/WSL**。
+- 首次实验在 Windows 主机、Python 3.14.6（`platform: win32`）上运行；当时 WSL 返回 `E_ACCESSDENIED`、无 Docker。2026-10-25 WSL Ubuntu-24.04 恢复可用后，同一命令也在 `qutagent:dev` 容器内（Python 3.11.17，`platform: linux`）跑通 3/3；`labs/` 本身的隔离仍是同主机进程级，不是容器/VM 级。
 - 每个实验用例启动 **4 个独立子进程**：`labs/target.py`（靶题）、`labs/mock_platform.py`（平台）、`labs/fake_model.py`（假模型，仅 fake 实验）、`agent/main.py`（被真实入口调用的求解器）。靶题/平台/模型各自绑定 `127.0.0.1` 的临时端口；求解器工作目录是 `artifacts/lab/_work/` 下的临时目录，运行结束即删除。
 - **这是进程 + 端口 + 临时目录级隔离，不是容器/VM 级隔离**。所有进程与 runner 同主机、同用户，没有 PID/文件系统/网络命名空间；对恶意求解器不构成安全边界。`agent/security.py` 的环境变量允许列表、`QUT_WEB_ONLY=1` 禁用 shell、HTTP 工具 origin 白名单都只是收敛工具面，不能替代容器隔离。
 - 求解器只拿到 `task.json`、`README.md`、目标地址、平台端点和模型端点；靶题的真实 `flag` 文件位于求解器工作目录之外的靶题临时根目录，**不传给求解器**。mock 平台作为 grader 读取该文件做判定。
@@ -24,12 +24,15 @@
 | 文件 | 作用 |
 |---|---|
 | `agent/tools.py::http_request` | 结构化 GET/POST；只允许显式 origin 集合；禁止跳转（3xx 返回 `redirect_blocked`，不跟随）；响应体上限/截断标记；超时/网络错误作为观察值返回；返回 status、headers、body preview、耗时 |
-| `agent/loop.py` | 新增 `{"action":"http",...}`；origin 只取平台实例 `services` 与任务 `scope`；`QUT_WEB_ONLY=1` 时 shell 在真正执行前被拒绝（`shell_disabled_web_only`） |
+| `agent/tools.py::HttpSession` | 求解循环使用的有状态 HTTP：Cookie jar、同源安全重定向（≤5 跳）、header allowlist/CRLF 防护、平台/模型密钥头拒发、截断/超时 |
+| `agent/skills.py` | web/pwn/ai/misc/qa 分类与分类 playbook、flag 纪律、格式纠错/循环警告文本 |
+| `agent/mcp.py` | 纯标准库 MCP JSON-RPC HTTP/SSE 客户端；loop 的 `mcp` action 用于 AI 安全的 MCP 工具发现/调用 |
+| `agent/loop.py` | `{"action":"http"}` 使用 `HttpSession`；`mcp` action；分类 prompt、格式纠错、循环检测、历史压缩；`QUT_WEB_ONLY=1` 时 shell 在真正执行前被拒绝 |
 | `labs/target.py` | 纯标准库授权靶题：`/download?name=` 先校验**原始**查询串（拒绝字面 `..` 与前导 `/`），再 `unquote` 并拼接，`%2e%2e/private/flag.txt` 可穿越；有根目录包含检查防止读到宿主文件；每个进程生成独立随机 flag，请求日志不记录响应体 |
 | `labs/mock_platform.py` | `GET /api/v1/challenges/{id}`、`POST /api/v1/instances`、`GET /instances/{id}/status`、`GET /instances/{id}`、`POST /submissions`；真实比较 flag；提交日志只保存答案 SHA-256 与判定 |
 | `labs/fake_model.py` | OpenAI 兼容 `POST /v1/chat/completions`；脚本化但**依据观察自适应**：发现目标 → 列目录 → 正常下载 → 编码穿越 → 提取 flag → 提交；遇到 403/404 会尝试其他编码 |
 | `labs/runner.py`、`scripts/run_lab.py` | 启动/回收子进程、固定预算、采集 `result.json`/`events.jsonl`/提交与目标/平台/模型日志、脱敏 flag、生成实验汇总 |
-| `tests/test_web_tool.py`、`tests/test_lab.py` | 新增 17 项测试：origin 允许/拒绝、截断、超时、禁止跳转、QUT_WEB_ONLY、假模型闭环、turn 预算、真实模型 blocked、真实 flavor 透传、动态 flag 与穿越 |
+| `tests/test_web_tool.py`、`tests/test_lab.py`、`tests/test_skills.py`、`tests/test_mcp.py` | 新增 59 项测试：origin 允许/拒绝、截断、超时、禁止跳转、Cookie/重定向、格式纠错/循环检测/历史压缩、分类 playbook、MCP JSON/SSE、假模型闭环、turn 预算、真实模型 blocked、真实 flavor 透传、动态 flag 与穿越 |
 
 靶题漏洞是**有意且受限**的：`/download` 的朴素检查在 `unquote` 之前执行，因此 `%2e%2e/private/flag.txt` 绕过前缀/穿越检查；但解码后仍强制 `resolved.is_relative_to(target_root)`，无法读取靶题临时根之外的文件。`/files/<name>` 不解码输入，是安全的对照路由。
 
@@ -101,7 +104,7 @@ python -X utf8 scripts/run_lab.py --model real --set validation
 python -X utf8 -m unittest discover -s tests -v
 ```
 
-结果：`Ran 67 tests`，`OK (skipped=2)`，退出码 `0`。跳过的 2 项是既有的 Linux-only shell/进程组测试；新增的 `test_web_tool.py`（10 项）与 `test_lab.py`（7 项）全部执行并通过，覆盖 origin 允许/拒绝、截断、超时、禁止跳转、`QUT_WEB_ONLY`、假模型完整闭环、turn 预算、真实模型 blocked、flavor 透传、动态 flag 与编码穿越。新增测试不使用持久凭据，也不访问真实平台；临时文件由测试/实验目录管理。
+结果：`Ran 126 tests`，`OK (skipped=2)`，退出码 `0`。跳过的 2 项是既有的 Linux-only shell/进程组测试；新增的靶题/HTTP 会话/MCP/skills 测试与既有测试全部通过，覆盖 origin 允许/拒绝、截断、超时、禁止跳转、Cookie/同源重定向、`QUT_WEB_ONLY`、格式纠错/循环检测/历史压缩、分类 playbook、MCP JSON/SSE、假模型完整闭环、turn 预算、真实模型 blocked、flavor 透传、动态 flag 与编码穿越。镜像内 Linux 上同一套件也 **126/126** 通过。新增测试不使用持久凭据，也不访问真实平台；临时文件由测试/实验目录管理。
 
 ## 证据文件说明
 
@@ -125,19 +128,7 @@ Get-ChildItem artifacts\lab -Recurse -File | Select-String -Pattern 'flag\{[0-9a
 ## 边界与后续
 
 - 本轮证明的是**调用链和平台判定可运行**，不是模型的真实 Web 解题能力；假模型是脚本化的，不能用于比较模型强弱。
-- 靶题只有单题、单 flag、无会话/Cookie；HTTP 工具目前无 Cookie jar，也没有多题、附件、Pwn/逆向工具链。靶题隔离是同主机进程级，不是 Docker 容器级。
-- 真实比赛成绩、镜像注册/审核、赛道附件规则仍需外部信息；在获得授权凭据前，真实模型条目保持 `blocked`。
-- 未来如具备 Docker/WSL，可把 `labs/target.py`、`labs/mock_platform.py`、`labs/fake_model.py` 分别放入独立容器/网络命名空间，runner 接口与固定 seed/预算不变，例如：
-
-```bash
-# WSL/Linux（若可用）
-python3 -X utf8 scripts/run_lab.py --model fake --set dev
-python3 -X utf8 -m unittest discover -s tests -v
-
-# Docker 强化隔离（尚未实现，仅方向）
-docker build --pull=false --platform linux/amd64 -t qutagent:dev .
-docker run --rm -v "$PWD:/repo" -w /repo --entrypoint python qutagent:dev \
-  -X utf8 scripts/run_lab.py --model fake --set dev
-```
-
-上述 Docker 命令在 `labs/` 尚未容器化时不构成已完成验证；当前验收只用 Windows 原生进程级实验。
+- 靶题只有单题、单 flag；求解器侧 HTTP 工具已有 Cookie jar/同源重定向，但靶题本身没有多题、附件或 Pwn/AI 目标。靶题隔离是同主机进程级，不是 Docker 容器级。
+- 真实比赛成绩、镜像注册/审核、赛道附件规则仍需外部信息；在获得授权凭据前，真实模型条目保持 `blocked`。可用 `--llm-env-file <gitignored file>` 提供 `LLM_*`，值不会回显。
+- 2026-10-25 已在 `qutagent:dev` 镜像内（Python 3.11.17，linux）重跑同一命令，**3/3 成功**，见 `artifacts/lab/experiment.json` 的 `fake-dev-20261025T101014Z-9cbe02`；该运行仍是进程级靶题，不是把三个服务拆进独立容器。
+- 未来可把 `labs/` 三个服务放入独立容器/网络命名空间；当前镜像级验证已证明 agent/工具链可在 Linux 容器内运行。

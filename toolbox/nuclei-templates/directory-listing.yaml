@@ -1,0 +1,24 @@
+id: directory-listing
+
+info:
+  name: Directory listing enabled
+  author: qutagent
+  severity: info
+  description: The web server returns an auto-generated index, which may expose source, backups or uploads.
+  tags: exposure,listing,misconfig
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Index of /"
+          - "Parent Directory"
+        condition: and
+      - type: status
+        status:
+          - 200

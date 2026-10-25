@@ -1,0 +1,28 @@
+id: exposed-dotenv
+
+info:
+  name: Exposed .env file
+  author: qutagent
+  severity: high
+  description: A publicly readable .env file commonly leaks API keys, tokens and database credentials.
+  tags: exposure,env,config
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.env"
+    matchers-condition: and
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^[A-Z][A-Z0-9_]{2,64}=.+$"
+      - type: status
+        status:
+          - 200
+    extractors:
+      - type: regex
+        part: body
+        name: keys
+        regex:
+          - "(?m)^([A-Z][A-Z0-9_]{2,64})="

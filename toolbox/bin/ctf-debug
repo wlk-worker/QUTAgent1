@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# ctf-debug <binary> [gdb command ...]
+# Non-interactive gdb driver: always -batch, no init files, stdin closed.
+# Bounded command count and length; output is truncated on purpose.
+set -u
+MAX_BYTES=${CTF_DEBUG_MAX_BYTES:-12000}
+MAX_COMMANDS=12
+MAX_COMMAND_CHARS=400
+TIMEOUT_S=${CTF_DEBUG_TIMEOUT_S:-120}
+
+usage() {
+    printf 'usage: ctf-debug <binary> [gdb command ...]\n'
+    printf 'Runs gdb -batch -nx with the given commands (default: info file; info functions).\n'
+    printf 'Interactive use is not supported. Output capped at %s bytes.\n' "$MAX_BYTES"
+}
+die() { printf 'ctf-debug: error: %s\n' "$*" >&2; exit 2; }
+
+case "${1:-}" in
+    -h|--help) usage; exit 0 ;;
+esac
+[ "$#" -ge 1 ] || { usage >&2; exit 2; }
+bin=$1
+shift
+
+[ -e "$bin" ] || die "no such file: $bin"
+[ -f "$bin" ] || die "not a regular file: $bin"
+[ -r "$bin" ] || die "not readable: $bin"
+[ "$#" -le "$MAX_COMMANDS" ] || die "too many gdb commands (max $MAX_COMMANDS)"
+command -v gdb >/dev/null 2>&1 || die "gdb not installed"
+
+args=(-q -batch -nx
+      -iex 'set pagination off'
+      -iex 'set confirm off'
+      -iex 'set height 0'
+      -iex 'set width 0'
+      -iex 'set debuginfod enabled off')
+if [ "$#" -eq 0 ]; then
+    args+=(-ex 'info file' -ex 'info functions')
+fi
+for command in "$@"; do
+    [ "${#command}" -le "$MAX_COMMAND_CHARS" ] || die "gdb command too long (max $MAX_COMMAND_CHARS chars)"
+    case "$command" in
+        *$'\n'*) die "gdb command must not contain a newline" ;;
+        *$'\r'*) die "gdb command must not contain a carriage return" ;;
+    esac
+    args+=(-ex "$command")
+done
+args+=(--args "$bin")
+
+out=$(timeout "$TIMEOUT_S" gdb "${args[@]}" </dev/null 2>&1) \
+    || die "gdb failed or timed out for: $bin"
+printf 'target: %s\n' "$bin"
+printf '%s\n' "$out" | head -c "$MAX_BYTES"
+if [ "$(printf '%s' "$out" | wc -c)" -gt "$MAX_BYTES" ]; then
+    printf '\n[ctf-debug: output truncated at %s bytes]\n' "$MAX_BYTES"
+fi

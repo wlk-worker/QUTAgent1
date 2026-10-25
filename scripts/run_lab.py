@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -20,6 +21,42 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from labs.runner import EXPERIMENTS, run_experiment  # noqa: E402
+
+# Only these names are loaded from --llm-env-file. The file is never printed,
+# copied into evidence, or passed to the fake model; keep it outside version
+# control (artifacts/ and .env.* are gitignored).
+_LLM_ENV_KEYS = {"LLM_FLAVOR", "LLM_MODEL", "LLM_API_KEY", "LLM_BASE_URL"}
+
+
+def load_llm_env_file(path: str | None) -> int:
+    """Load LLM_* lines from a local KEY=VALUE file without echoing values.
+
+    Returns the number of variables loaded. Raises ValueError for a missing or
+    unreadable file. Shell syntax beyond simple KEY=VALUE is deliberately not
+    supported; this is not a general dotenv implementation.
+    """
+    if not path:
+        return 0
+    source = Path(path)
+    text = source.read_text(encoding="utf-8")
+    loaded = 0
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key.startswith("export "):
+            key = key[len("export "):].strip()
+        if key not in _LLM_ENV_KEYS:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        if value:
+            os.environ[key] = value
+            loaded += 1
+    return loaded
 
 
 def _summary_view(experiment: dict) -> dict:
@@ -66,8 +103,18 @@ def main() -> int:
     parser.add_argument("--timeout-s", type=float, default=None, help="override per-case time budget")
     parser.add_argument("--max-turns", type=int, default=None, help="override per-case turn budget")
     parser.add_argument("--max-requests", type=int, default=None, help="override per-case model request budget")
+    parser.add_argument("--llm-env-file", default="",
+                        help="optional local KEY=VALUE file with LLM_* for --model real; never echoed")
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args()
+
+    if args.llm_env_file:
+        try:
+            count = load_llm_env_file(args.llm_env_file)
+        except OSError as exc:
+            print(f"cannot read --llm-env-file: {type(exc).__name__}", file=sys.stderr)
+            return 2
+        print(f"loaded {count} LLM_* value(s) from --llm-env-file (values not printed)")
 
     seeds = None
     if args.seeds.strip():

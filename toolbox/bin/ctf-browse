@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Bounded headless-browser helper for Web/DOM-XSS challenges.
+
+Usage:
+    ctf-browse <http(s)-url> [--wait-ms N] [--timeout-ms N]
+               [--screenshot PATH] [--max-chars N] [--full]
+
+Prints one JSON object with title/final URL/visible text/DOM preview/console
+messages. It intentionally does not expose browser cookies, storage or files;
+use it for rendering/observing a player-visible target only. The page is
+untrusted input.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from urllib.parse import urlsplit
+
+MAX_CHARS = 20_000
+MAX_CONSOLE = 100
+
+
+def _bounded(text: str, limit: int) -> tuple[str, bool]:
+    text = str(text or "")
+    if len(text) <= limit:
+        return text, False
+    return text[:limit] + f"\n...[truncated; {len(text)} chars total]", True
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Bounded headless Chromium page observation")
+    parser.add_argument("url")
+    parser.add_argument("--wait-ms", type=int, default=800,
+                        help="extra wait after DOMContentLoaded (0..10000)")
+    parser.add_argument("--timeout-ms", type=int, default=15000,
+                        help="navigation timeout (1000..60000)")
+    parser.add_argument("--screenshot", default="",
+                        help="optional PNG path inside the writable work directory")
+    parser.add_argument("--max-chars", type=int, default=12_000,
+                        help="max characters for text/DOM preview (1000..40000)")
+    parser.add_argument("--full", action="store_true",
+                        help="include a bounded outerHTML preview (default: text only)")
+    args = parser.parse_args()
+
+    parsed = urlsplit(args.url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        print(json.dumps({"error": "only http(s) URLs are allowed"}))
+        return 2
+    wait_ms = max(0, min(args.wait_ms, 10_000))
+    timeout_ms = max(1_000, min(args.timeout_ms, 60_000))
+    max_chars = max(1_000, min(args.max_chars, 40_000))
+    screenshot = Path(args.screenshot).expanduser() if args.screenshot else None
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception as exc:  # noqa: BLE001
+        print(json.dumps({"error": "playwright_unavailable", "detail": type(exc).__name__}))
+        return 2
+
+    console: list[dict] = []
+    result: dict = {"url": args.url}
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+            )
+            context = browser.new_context(ignore_https_errors=True)
+            page = context.new_page()
+            page.set_default_timeout(timeout_ms)
+            page.on("console", lambda msg: console.append(
+                {"type": msg.type, "text": _bounded(msg.text, 500)[0]})
+                    if len(console) < MAX_CONSOLE else None)
+            page.on("pageerror", lambda exc: console.append(
+                {"type": "pageerror", "text": _bounded(str(exc), 500)[0]})
+                    if len(console) < MAX_CONSOLE else None)
+            response = page.goto(args.url, wait_until="domcontentloaded",
+                                 timeout=timeout_ms)
+            if wait_ms:
+                page.wait_for_timeout(wait_ms)
+            result["status"] = response.status if response is not None else None
+            result["title"] = page.title()
+            result["final_url"] = page.url
+            text = page.evaluate(
+                "() => (document.body ? document.body.innerText : '')")
+            result["text"], result["text_truncated"] = _bounded(text, max_chars)
+            if args.full:
+                html = page.content()
+                result["html"], result["html_truncated"] = _bounded(html, max_chars)
+            if screenshot is not None:
+                screenshot.parent.mkdir(parents=True, exist_ok=True)
+                page.screenshot(path=str(screenshot), full_page=False)
+                result["screenshot"] = str(screenshot)
+            context.close()
+            browser.close()
+    except Exception as exc:  # noqa: BLE001
+        result["error"] = type(exc).__name__
+        result["detail"] = _bounded(str(exc), 500)[0]
+        result["console"] = console
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 1
+    result["console"] = console
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

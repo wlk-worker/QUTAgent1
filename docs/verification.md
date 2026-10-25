@@ -31,10 +31,11 @@
 
 - G0：公开规则审计及未知项记录已完成；赛道附件仍未找到，已整理可直接发送的 [规则询问清单](rules-request.md)。
 - G1：本地构建、dry run 与官方 `agent check` 已通过。
-- G2：Windows 全量测试 **67 项通过（2 项 Linux-only skip）**；包含原有契约/可靠性/集成测试与新增靶题、HTTP 工具、出题/参赛流程测试。模拟 HTTP 闭环不是平台验证。
-- G3：**已运行**进程级授权 Web 靶题 + 假模型完整闭环（dev 3/3，mock 平台接受 3 个动态 flag）；真实模型实验因无 `LLM_*` 凭据明确 `blocked`，**没有真实模型成功率，也没有真实 CTFy 平台接受记录**。
-- G4：出题包生成/审计/smoke 的本地证据仍在；新增 `author/controller.py` 和 `scripts/platform_flow.py`，默认 dry-run、mock 契约测试通过；**未上传、未审核、未注册、未创建 entry**。
-- G5：已建立固定 dev/validation 种子集与统一预算（60s / 8 turns / 8 requests）；仅 fake 链路跑完，真实模型对照尚未运行。
+- G2：Windows 全量测试 **126 项通过（2 项 Linux-only skip）**；镜像内 Linux 全量测试同样 126/126。包含契约/可靠性/靶题/HTTP 会话/MCP/出题/参赛流程测试。模拟 HTTP 与 mock MCP 不是平台验证。
+- G3：**已运行**进程级 Web 靶题 + 假模型闭环（Windows 与镜像内均 3/3，mock 平台接受动态 flag）；真实模型实验因无 `LLM_*` 凭据明确 `blocked`，**没有真实模型成功率，也没有真实 CTFy 平台接受记录**。
+- G4：出题包生成/审计/smoke 的本地证据仍在；`author/controller.py` 和 `scripts/platform_flow.py` 默认 dry-run、mock 契约测试通过；**未上传、未审核、未注册、未创建 entry**。
+- G5：固定 dev/validation 种子集与统一预算（60s / 8 turns / 8 requests）仍有效；新增分类 playbook/MCP/HTTP 会话，但真实模型对照仍未运行。
+- G6（新增）：镜像已装入 Web/Pwn/AI 工具链，WSL Docker 构建成功（3.57 GB 磁盘 / 0.88 GiB 内容），`ctfy agent check` 与 required 工具检查通过；**未上传/审核**。
 
 一键重跑 Windows 本地验收：`python -X utf8 -m unittest discover -s tests -v` + `python -X utf8 scripts/run_lab.py --model fake --set dev`。Linux/Docker 可用时再跑 `bash scripts/verify_local.sh`（需要 `ctfy`、`ctfy-admin`、Docker 与 Compose 在 PATH 上）。
 
@@ -50,7 +51,7 @@
 
 | 验证 | 实际结果 | 边界 |
 |---|---|---|
-| Windows `python -X utf8 -m unittest discover -s tests -v` | 当轮历史快照：24 项执行，22 通过、2 跳过（Linux 命令及其入口）；退出 0；最新全量为 67 项，见下节 | 含状态、假密钥、短预算、慢响应、请求上限、POST 不确定结果 |
+| Windows `python -X utf8 -m unittest discover -s tests -v` | 当轮历史快照：24 项执行，22 通过、2 跳过（Linux 命令及其入口）；退出 0；最新全量为 126 项，见下节 | 含状态、假密钥、短预算、慢响应、请求上限、POST 不确定结果 |
 | WSL `python3 -m unittest discover -s tests -v` | 24/24 通过，退出 0 | Linux 进程组、命令输出上限和模拟 HTTP 闭环已执行；仍不等于真实靶题解题 |
 | Windows `python -X utf8 scripts/run_local.py` | `dry_run`、`fully_solved:false`，退出 0 | 入口/文件契约检查 |
 | WSL `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` | 成功；本地 image ID `sha256:20e17c0933e13d3dc04d41599f22a56f433710e7b363b68507e8563f8371a3b3` | 构建期下载 apt 软件包；评测期无需下载 |
@@ -72,4 +73,22 @@
 | 镜像/entry 流程 dry-run | `python -X utf8 scripts/platform_flow.py register-harness ...` / `enter ...` → exit 0，`network sent: False`，报告 `planned_only` | 只有计划请求形状；未注册、未 probe、未创建 entry |
 | 凭据/flag 泄漏扫描 | `artifacts/lab` 与出题报告扫描无 `flag{...}` 明文；mock 提交只存答案 SHA-256 | 仅覆盖本轮实验产物，不等于平台审计 |
 
-环境限制：当前 Windows 无 Docker；WSL 命令返回 `E_ACCESSDENIED`，因此没有做容器级靶题/镜像复跑，也没有重新执行 `ctfy agent check`（此前的 WSL 结果仍是历史证据）。真实模型、真实平台注册/上传/entry 需要用户提供授权凭据与赛道附件；未完成项已列入 [规则询问清单](rules-request.md)。
+环境限制：当轮 Windows 侧无 Docker；WSL 命令返回 `E_ACCESSDENIED`，因此没有做容器级靶题/镜像复跑，也没有重新执行 `ctfy agent check`（此前的 WSL 结果仍是历史证据）。真实模型、真实平台注册/上传/entry 需要用户提供授权凭据与赛道附件；未完成项已列入 [规则询问清单](rules-request.md)。
+
+## 2026-10-25 求解器能力融合与工具链镜像复核
+
+本轮 WSL Ubuntu-24.04 恢复可用（Docker 29.1.3 / Compose v5.6.1），因此补做了镜像级验证；仍然没有真实模型凭据、没有真实平台请求。能力映射见 [solver skills](solver-skills.md)，工具链见 [toolchain](toolchain.md)。
+
+| 验证 | 实际结果 | 证据等级与边界 |
+|---|---|---|
+| Windows 全量测试 | `python -X utf8 -m unittest discover -s tests -v` → **Ran 126 tests, OK (skipped=2)** | 代码/契约/本地闭环；新增 59 项 skills/loop/HTTP 会话/MCP 测试 |
+| 镜像内全量测试 | `docker run --rm -v "$PWD:/repo" -w /repo --entrypoint python qutagent:dev -X utf8 -m unittest discover -s tests -v` → **Ran 126 tests, OK** | Linux 镜像内执行；仍不是平台/真实模型验证 |
+| 镜像工具链构建 | `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` → 成功，完整 **1078 s** + `ctf-browse`/skills 增量重建，镜像 `sha256:2e1060c9…`，内容 `943,208,224` B ≈ 0.88 GiB，磁盘 3.57 GB | 构建期联网安装；评测期离线 |
+| 工具链 required 检查 | `docker run --rm --entrypoint python qutagent:dev /app/scripts/check_toolchain.py` → exit 0，`verdict: passed`，**required_failed: []**，`optional_failed: ["import:angr"]` | 66 项检查；angr 为已知 optional 缺失 |
+| 离线检查 | 同上加 `--network none` → exit 0 / passed | 运行期工具链不依赖网络 |
+| 官方本地镜像检查 | `ctfy agent check qutagent:dev --json` → `verdict: passed`、`ran_locally: true`、`findings: []` | CTFY-0001 本地 dry run；不是平台审核 |
+| 镜像级假模型靶题 | 镜像内 `python -X utf8 scripts/run_lab.py --model fake --set dev` → 3/3，`fake-dev-20261025T101014Z-9cbe02`，wall 7.172s，平台接受 3 个动态 flag | 证明镜像内 agent/HTTP/模型/平台链路可运行；假模型不代表真实模型能力 |
+| 真实模型入口 | 仍无 `LLM_*`，`--model real` 返回 exit 2 / `blocked`；新增 `--llm-env-file` 便于在本地 gitignored 文件提供凭据（值不回显） | 无真实模型成功率；未伪造 |
+| 平台注册/出题上传 | 无 token；`platform_flow.py`/`author/controller.py` 仍只做 dry-run/mock | 未注册、未 probe、未 entry、未上传、未审核 |
+
+结论：镜像与求解器的**本地可用性**已显著增强（分类 playbook、格式纠错、循环检测、历史压缩、Cookie 会话、同源重定向、MCP、Pwn/Web/AI 工具链），并通过 required 检查与镜像内测试；但**真实模型解题、平台注册/审核、真实平台接受 flag、赛道规则附件**仍是未完成项。

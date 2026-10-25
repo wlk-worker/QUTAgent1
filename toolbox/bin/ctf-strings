@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# ctf-strings <binary> [min-length]
+# Bounded `strings` output for a local file (default minimum length 6).
+set -u
+MAX_BYTES=${CTF_STRINGS_MAX_BYTES:-8000}
+
+usage() {
+    printf 'usage: ctf-strings <file> [min-length]\n'
+    printf 'Bounded printable-string extraction (strings -a). Output capped at %s bytes.\n' "$MAX_BYTES"
+}
+die() { printf 'ctf-strings: error: %s\n' "$*" >&2; exit 2; }
+
+case "${1:-}" in
+    -h|--help) usage; exit 0 ;;
+esac
+[ "$#" -ge 1 ] && [ "$#" -le 2 ] || { usage >&2; exit 2; }
+bin=$1
+minlen=${2:-6}
+
+[ -e "$bin" ] || die "no such file: $bin"
+[ -f "$bin" ] || die "not a regular file: $bin"
+[ -r "$bin" ] || die "not readable: $bin"
+case "$minlen" in
+    ''|*[!0-9]*) die "min-length must be an integer: $minlen" ;;
+esac
+[ "$minlen" -ge 1 ] && [ "$minlen" -le 64 ] || die "min-length must be 1..64"
+command -v strings >/dev/null 2>&1 || die "strings (binutils) not installed"
+
+out=$(timeout 30 strings -a -n "$minlen" -- "$bin" 2>&1) \
+    || die "strings failed on: $bin"
+printf 'target: %s\n' "$bin"
+printf '%s\n' "$out" | head -c "$MAX_BYTES"
+if [ "$(printf '%s' "$out" | wc -c)" -gt "$MAX_BYTES" ]; then
+    printf '\n[ctf-strings: output truncated at %s bytes]\n' "$MAX_BYTES"
+fi

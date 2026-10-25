@@ -1,0 +1,50 @@
+QUTAgent competition image — toolchain quick reference
+======================================================
+
+Pwn / reversing
+---------------
+ctf-checksec <binary>        hardened summary (pwn checksec, readelf fallback)
+ctf-disasm <binary> [sym]    bounded objdump -d / radare2 pdf (no shell eval)
+ctf-debug <binary> [cmds...] gdb -batch -nx; never interactive
+ctf-strings <file> [n]       bounded strings -a
+ctf-browse <url>             bounded headless Chromium render (DOM XSS / JS pages)
+checksec <binary>            checksec.sh (if installed)
+r2 / rabin2 / rasm2          radare2 static analysis
+ROPgadget --binary <bin>     gadget search;  one_gadget <libc>  one-shot gadgets
+seccomp-tools dump ./bin     seccomp filter disassembly
+patchelf, readelf, objdump, nm, gdb, gdbserver, ltrace, strace
+python -c 'from pwn import *'            pwntools; pwn checksec / pwn asm / cyclic
+python -c 'import angr; ...'             angr symbolic execution (optional)
+z3 (python -c 'from z3 import *')        SMT solver
+
+Web
+---
+curl, wget, nmap, sqlmap, ffuf, gobuster, nikto
+nuclei -t /opt/nuclei-templates -u <url>   starter exposure templates only
+nuclei -t <your-templates-dir> -u <url>    custom offline templates
+python -c 'import requests, httpx, bs4'    HTTP + HTML parsing
+ctf-browse <url> [--screenshot p]          headless Chromium render/DOM/console
+playwright (optional)                      headless Chromium for JS-rendered pages
+
+AI security / APIs
+------------------
+mcp (Python SDK), websocket-client, httpx, grpcurl, openssl, jq
+curl -N -H 'Accept: text/event-stream' <mcp-http-endpoint>   raw SSE / JSON-RPC
+grpcurl -plaintext <host:port> list                           gRPC reflection probe
+
+General
+-------
+jq, file, xxd, hexdump, binwalk, unzip, zip, git, gcc, g++, make, ruby
+
+Inventory
+---------
+/app/tool-versions.txt        pip/dpkg/gem inventory captured at build time
+python /app/scripts/check_toolchain.py        JSON capability report
+python /app/scripts/check_toolchain.py --output /tmp/toolchain.json
+
+Notes
+-----
+- No runtime network/package installation: everything is baked into the image.
+- Command output is truncated by the ctf-* helpers; call the underlying tool
+  directly when you need the full output.
+- The container runs as UID 10001 (agent); /ctfy/work is the writable workspace.
