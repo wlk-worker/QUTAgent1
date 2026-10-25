@@ -361,7 +361,8 @@ class LoopMcpActionTests(unittest.TestCase):
         origin = self.origin
         model = _McpModel([
             {"action": "mcp", "url": origin + "/mcp", "op": "list_tools",
-             "why": "enumerate MCP tools"},
+             "headers": {"Authorization": "Bearer loop-token"},
+             "why": "enumerate MCP tools with the provided auth header"},
             {"action": "mcp", "url": origin + "/mcp", "op": "call", "tool": "echo",
              "arguments": {"text": "probe"}, "why": "confirm tool call path"},
             {"action": "mcp", "url": origin + "/mcp", "op": "call", "tool": "flag",
@@ -375,6 +376,8 @@ class LoopMcpActionTests(unittest.TestCase):
         self.assertIn("## Playbook: AI / LLM application security", model.systems[0])
         self.assertEqual(result["mcp_calls"], 3)
         self.assertGreaterEqual(result["tool_calls_made"], 3)
+        listed = [hit for hit in MockMCPHandler.hits if hit["method"] == "tools/list"]
+        self.assertEqual(listed[-1]["authorization"], "Bearer loop-token")
         self.assertTrue(result["fully_solved"])
         self.assertEqual(result["stop_reason"], "done")
         self.assertEqual(platform.submissions, [("flag", MCP_FLAG)])
