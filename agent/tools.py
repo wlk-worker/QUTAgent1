@@ -27,7 +27,8 @@ REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 ALLOWED_REQUEST_HEADERS = frozenset({
     "accept", "accept-language", "authorization", "cache-control", "content-type",
     "cookie", "origin", "referer", "user-agent", "x-csrf-token",
-    "x-requested-with", "x-xsrf-token",
+    "x-requested-with", "x-xsrf-token", "x-api-key", "x-auth-token",
+    "x-mcp-token",
 })
 FORBIDDEN_REQUEST_HEADERS = frozenset({
     "connection", "content-length", "expect", "host", "proxy-authorization",

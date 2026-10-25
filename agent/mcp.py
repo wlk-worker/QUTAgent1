@@ -8,7 +8,8 @@ challenges that expose an in-scope MCP server (``mcp`` action:
 
 Safety boundaries mirror the structured HTTP tool: the server URL must be in
 the platform-provided origin allowlist, redirects are never followed, responses
-are size-capped, calls are bounded by the run deadline, and platform/model
+are size-capped, calls are bounded by the run deadline, optional auth/custom
+headers are allowlisted/CRLF-checked/credential-scrubbed, and platform/model
 credential values are redacted from tool output.
 
 This is a scope and output-hygiene control, not an OS isolation boundary.
@@ -24,7 +25,7 @@ import urllib.request
 
 from .budget import BudgetExpired, bounded_call, remaining
 from .security import redact
-from .tools import normalize_origin
+from .tools import normalize_origin, prepare_headers
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
 CLIENT_NAME = "QUTAgent-solver"
@@ -132,7 +133,7 @@ class MCPClient:
 
     def __init__(self, url, *, allowed_origins, deadline=None, timeout_s=20,
                  max_response_bytes=MAX_RESPONSE_BYTES, max_content_chars=MAX_CONTENT_CHARS,
-                 opener=None, clock=time.monotonic, environ=None):
+                 headers=None, opener=None, clock=time.monotonic, environ=None):
         self.url = str(url or "").strip()
         parsed = urllib.parse.urlsplit(self.url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
@@ -156,6 +157,10 @@ class MCPClient:
         self.opener = opener or urllib.request.build_opener(_NoRedirect)
         self.clock = clock
         self.environ = os.environ if environ is None else environ
+        prepared, header_error = prepare_headers(headers, environ=self.environ)
+        if header_error:
+            raise ValueError(header_error.get("error", "invalid_headers"))
+        self.extra_headers = prepared or {}
         self.session_id: str | None = None
         self.initialized = False
         self.server_info: dict = {}
@@ -174,6 +179,11 @@ class MCPClient:
             "Accept": "application/json, text/event-stream",
             "User-Agent": "QUTAgent-mcp/1",
         }
+        # Model-supplied auth/custom headers are allowlisted, CRLF-checked and
+        # credential-scrubbed by prepare_headers(); framing headers stay ours.
+        for name, value in self.extra_headers.items():
+            if name.lower() not in {"content-type", "accept", "user-agent"}:
+                headers[name] = value
         if self.session_id:
             headers["Mcp-Session-Id"] = self.session_id
         return headers

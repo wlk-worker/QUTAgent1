@@ -64,7 +64,9 @@ class MockMCPHandler(BaseHTTPRequestHandler):
             payload = {}
         with type(self).lock:
             type(self).hits.append({"path": self.path, "method": payload.get("method"),
-                                    "session": self.headers.get("Mcp-Session-Id")})
+                                    "session": self.headers.get("Mcp-Session-Id"),
+                                    "authorization": self.headers.get("Authorization"),
+                                    "api_key": self.headers.get("X-Api-Key")})
         if self.path == "/slow":
             time.sleep(0.5)
             self._json(200, {"jsonrpc": "2.0", "id": payload.get("id"), "result": {}})
@@ -179,6 +181,24 @@ class MCPClientTests(unittest.TestCase):
         listed = [hit for hit in MockMCPHandler.hits if hit["method"] == "tools/list"]
         self.assertGreaterEqual(len(listed), 1)
         self.assertEqual(listed[-1]["session"], "mock-session-1")
+
+    def test_allowlisted_auth_headers_are_sent(self):
+        client = self._client(headers={"Authorization": "Bearer lab-token",
+                                       "X-Api-Key": "lab-key"})
+        result = client.list_tools()
+        self.assertTrue(result["ok"])
+        listed = [hit for hit in MockMCPHandler.hits if hit["method"] == "tools/list"]
+        self.assertEqual(listed[-1]["authorization"], "Bearer lab-token")
+        self.assertEqual(listed[-1]["api_key"], "lab-key")
+
+    def test_dangerous_or_secret_headers_are_rejected(self):
+        with self.assertRaises(ValueError):
+            self._client(headers={"Host": "evil"})
+        with self.assertRaises(ValueError):
+            self._client(headers={"Authorization": "Bearer x\r\nInjected: 1"})
+        with self.assertRaises(ValueError):
+            self._client(headers={"Authorization": "sk-test-secret"},
+                         environ={"LLM_API_KEY": "sk-test-secret"})
 
     def test_sse_transport_is_parsed(self):
         client = self._client("/sse")

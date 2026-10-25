@@ -47,7 +47,7 @@ platform/author files. Submit an answer only with concrete evidence; wrong guess
 Return exactly one JSON object per turn, with one of these shapes:
 {"action":"shell","command":"...","why":"..."}
 {"action":"http","method":"GET|POST","url":"http://host:port/path","body":{},"headers":{},"why":"..."}
-{"action":"mcp","url":"http://host:port/mcp","op":"list_tools|call","tool":"name","arguments":{},"why":"..."}
+{"action":"mcp","url":"http://host:port/mcp","op":"list_tools|call","tool":"name","arguments":{},"headers":{},"why":"..."}
 {"action":"submit","question_id":"flag","answer":"...","evidence":"..."}
 {"action":"refresh"}
 {"action":"download","name":"player-visible filename"}
@@ -414,15 +414,21 @@ def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Ca
                 else:
                     url = str(action.get("url") or "")
                     op = str(action.get("op") or "list_tools").strip().lower()
-                    client = mcp_clients.get(url)
+                    raw_headers = action.get("headers")
+                    header_key = ()
+                    if isinstance(raw_headers, dict):
+                        header_key = tuple(sorted((str(k), str(v)) for k, v in raw_headers.items()))
+                    cache_key = (url, header_key)
+                    client = mcp_clients.get(cache_key)
                     if client is None:
                         try:
-                            client = MCPClient(url, allowed_origins=allowed_origins, deadline=deadline)
+                            client = MCPClient(url, allowed_origins=allowed_origins,
+                                               deadline=deadline, headers=raw_headers)
                         except (TypeError, ValueError) as exc:
                             observation = {"error": "mcp_url_rejected", "detail": str(exc)[:100]}
                             client = None
                         else:
-                            mcp_clients[url] = client
+                            mcp_clients[cache_key] = client
                     if client is not None:
                         if op in {"list_tools", "list"}:
                             observation = client.list_tools()

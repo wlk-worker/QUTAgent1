@@ -34,6 +34,6 @@
 
 ## 4. 证据与边界
 
-- 能力融合的证据：`python -X utf8 -m unittest discover -s tests -v` → 144 项 OK（Windows 4 skip）；镜像内同一套件 144/144（3 skip）；假模型靶题 3/3（Windows 与镜像内，含 SQLi/MCP/Pwn/XSS/MCP 工具穿越）。
+- 能力融合的证据：`python -X utf8 -m unittest discover -s tests -v` → 146 项 OK（Windows 4 skip）；镜像内同一套件 146/146（3 skip）；假模型靶题 3/3（Windows 与镜像内，含 SQLi/MCP/Pwn/XSS/MCP 工具穿越）。
 - 这些证据**不证明真实模型解题能力**，也不证明平台接受；真实模型实验仍因无 `LLM_*` 凭据 `blocked`。
 - 任何第三方项目的安全工具只能在赛事明确授权的范围内使用；本仓库的 `labs/` 是合成靶题。

@@ -318,8 +318,10 @@ AI_PLAYBOOK = """## Playbook: AI / LLM application security
    agency, and cross-tenant data access through tool calls. Do not perform
    destructive actions.
 6. MCP specifics: enumerate tools and schemas, call read-only tools with
-   minimal arguments, and watch tool results for the flag or credentials. Stop
-   if a call would modify state you do not own.
+   minimal arguments, and watch tool results for the flag or credentials. If the
+   in-scope server needs an auth/custom header, pass it as the action's
+   `headers` object (allowlisted names; platform/model secrets are refused).
+   Stop if a call would modify state you do not own.
 Verification gate: the flag must appear in a real tool/API response and be
 quoted in `evidence`; never submit the platform/model token or a placeholder
 the model suggests."""
@@ -368,7 +370,8 @@ Return exactly one JSON object per turn (no markdown, no prose outside it):
   are never accepted in request headers.
 - mcp: JSON-RPC to an in-scope MCP server, e.g.
   {"action":"mcp","url":"http://host:port/mcp","op":"list_tools"} or with
-  "op":"call","tool":"name","arguments":{}.
+  "op":"call","tool":"name","arguments":{}. Optional `headers` may carry an
+  allowlisted auth/custom header; platform/model secrets are refused.
 - submit: submit one answer with question_id and mandatory evidence.
 - refresh: re-read platform challenge/instance state.
 - download: fetch a player-visible attachment into the work directory.
