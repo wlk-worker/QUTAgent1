@@ -116,6 +116,18 @@ EXPERIMENTS = {
         "description": ("Reflected-XSS + Playwright admin-bot + /collect lab: requires the "
                         "qutagent:dev image (Playwright/Chromium) or another Playwright host."),
     },
+    "ssrf": {
+        "kind": "ssrf",
+        "seeds": (801, 802, 803),
+        "timeout_s": 60,
+        "max_turns": 8,
+        "max_requests": 8,
+        "target_module": "labs.ssrf_target",
+        "fake_model": "labs.fake_ssrf_model",
+        "web_only": True,
+        "description": ("SSRF lab: public /fetch proxy with an exact-hostname denylist and "
+                        "a loopback metadata flag service."),
+    },
 }
 
 REAL_CREDENTIAL_FIELDS = ("LLM_FLAVOR", "LLM_MODEL", "LLM_API_KEY")

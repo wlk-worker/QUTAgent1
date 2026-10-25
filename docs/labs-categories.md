@@ -1,6 +1,6 @@
-# 分类靶题实验：SQLi / MCP(AI) / Pwn / XSS / MCP read_file
+# 分类靶题实验：SQLi / MCP(AI) / Pwn / XSS / MCP read_file / SSRF
 
-记录时间：2026-10-25（北京时间）。这一轮把单一路径穿越靶题扩展为多类本地授权靶题，SQLi、MCP(AI)、Pwn、XSS、MCP `read_file` 都做了假模型闭环：SQLi/MCP/MCP read_file 在 Windows 真跑 3/3；Pwn 在 `qutagent:dev` Linux 镜像内真跑 **3/3**（Windows 原生仍会正确 `blocked`）；XSS（反射 + Playwright admin bot + `/collect`）在 `qutagent:dev` 镜像内真跑 **3/3**（Windows 原生无 Playwright 时正确 `blocked`）；新增的 MCP `read_file` 靶题用真实的 tool 参数目录穿越（没有 `get_flag` 直读工具）取 flag。XSS 第一次镜像运行 0/3 暴露了 `/report` 二次 `unquote` 的 bug，修正后重跑 3/3；相关证据都保留。实验仍处于**进程级/合成靶题/无真实平台**的证据等级。
+记录时间：2026-10-25（北京时间）。这一轮把单一路径穿越靶题扩展为多类本地授权靶题，SQLi、MCP(AI)、Pwn、XSS、MCP `read_file`、SSRF 都做了假模型闭环：SQLi/MCP/MCP read_file/SSRF 在 Windows 真跑 3/3；Pwn 在 `qutagent:dev` Linux 镜像内真跑 **3/3**（Windows 原生仍会正确 `blocked`）；XSS（反射 + Playwright admin bot + `/collect`）在 `qutagent:dev` 镜像内真跑 **3/3**（Windows 原生无 Playwright 时正确 `blocked`）；新增的 MCP `read_file` 靶题用真实的 tool 参数目录穿越（没有 `get_flag` 直读工具）取 flag；新增 SSRF 靶题用弱 hostname denylist + IPv6 loopback 绕过读取内部 metadata flag。XSS 第一次镜像运行 0/3 暴露了 `/report` 二次 `unquote` 的 bug，修正后重跑 3/3；相关证据都保留。实验仍处于**进程级/合成靶题/无真实平台**的证据等级。
 
 ## 1. 固定数据集与预算
 
@@ -11,6 +11,7 @@
 | `ai-mcp-traversal` | AI / MCP `read_file` 目录穿越 | 701, 702, 703 | 60 s | 8 | 8 | 是（shell 禁用） |
 | `pwn` | Linux amd64 ret2win | 501, 502, 503 | 90 s | 12 | 12 | 否（需要 shell 跑 exp） |
 | `xss` | 反射 XSS + admin bot | 601, 602, 603 | 60 s | 10 | 10 | 是（shell 禁用；bot 在靶题侧） |
+| `ssrf` | SSRF 弱 denylist 绕过 | 801, 802, 803 | 60 s | 8 | 8 | 是（shell 禁用） |
 | `dev` / `validation` | 原路径穿越 | 101–103 / 201–203 | 60 s | 8 | 8 | 是 |
 
 每个用例的 flag 由对应靶题进程独立随机生成（`flag{32 hex}`）；seed 决定 challenge id、SQLi 路由变体与日志标签，不决定 flag。实验证据写入 `artifacts/lab-categories/`（`.gitignore` 的 `artifacts/` 下），flag 明文不落盘，只记录 SHA-256。
@@ -56,6 +57,14 @@
 - tool 结果：`read_file` 用 SSE 返回 `content[].text` + `structuredContent`；`get_flag` 返回 `isError=true` 的 `direct flag access denied`。
 - 假模型链路：`list_tools` → `read_file("policy.txt")`（正常读取）→ `read_file("../private/flag.txt")`（失败时尝试 `./../private/flag.txt` 等变体）→ 从 tool 响应取 flag → submit；全程使用 agent 的 `mcp` action，且不调用 `get_flag`。
 - 平台 challenge：`category=ai`，`tags=["mcp","tool-traversal","agentic_ai","lab"]`；纯标准库，Windows 与镜像都可跑。
+
+### 2.6 SSRF 弱 denylist 绕过（`labs/ssrf_target.py` + `labs/fake_ssrf_model.py`）
+
+- 公开 edge 暴露 `/fetch?url=<url>` 服务端抓取；弱 denylist 只比较**精确 hostname** `localhost`/`127.0.0.1`/`0.0.0.0`（不识别 IPv6 loopback 等等价地址）。
+- 内部 metadata/flag 服务在**同进程第二个端口**，同时绑定 `127.0.0.1` 与 `::1`（同一 port），路由 `/flag` 返回动态 flag；它不在 platform instance services 中。solver 直接访问该 origin 会被 agent 的 origin allowlist 拒绝，必须让公开 edge 代为抓取。
+- 绕过：页面给出字面 `http://127.0.0.1:<internal-port>/flag`（被 denylist 拒绝）；使用等价 loopback 变体 `http://[::1]:<internal-port>/flag` 既不是被 deny 的 hostname，解析后又是 loopback，因此返回 flag。Windows 上 `127.1`/十进制形式无法被 `getaddrinfo` 解析，所以用 IPv6 等价形式；靶题仍强制解析地址必须为 loopback 且不跟随 redirect，避免被滥用成外网 SSRF。
+- fake model 链路：GET `/` 读到内部 metadata hint（字面 `http://127.0.0.1:<port>/flag`）→ 将 host 换成 `[::1]` → GET `/fetch?url=...` → 从代理返回的 `body` 中提取 flag → submit。
+- 平台 challenge：`category=web`，`tags=["ssrf","web","denylist-bypass","lab"]`；纯标准库，Windows 与镜像都可跑。
 
 ## 3. 实际运行命令与结果（2026-10-25）
 
@@ -156,13 +165,38 @@ docker run --rm --user root -v "${PWD}:/repo" -w /repo --entrypoint python qutag
 - 汇总：`wall_seconds_total=8.693`，`tokens={input:25032, output:513}`，`model_requests_total=12`，`platform_accepted_flags=3`；每例 `turns=4`、`mcp_calls=3`、`stop_reason=done`（wall 4.065/2.180/2.226 s）。
 - 证据：`artifacts/lab-categories/runs/fake-ai-mcp-traversal-20261025T115446Z-089539/`（cases/ai-mcp-traversal-701..703，target 日志含 `tools/list` + 两次 `tools/call`，平台 correct）。
 
+### 3.6 SSRF 弱 denylist 绕过（Windows 真跑 3/3；镜像真跑 3/3）
+
+Windows 实测：
+
+```powershell
+python -X utf8 scripts/run_lab.py --model fake --set ssrf --out artifacts\lab-categories
+```
+
+- 退出码 `0`；`experiment_id = fake-ssrf-20261025T121525Z-e19f8e`；`status=completed`，**3/3 成功**。
+- 汇总：`wall_seconds_total=5.969`，`tokens={input:20865, output:381}`，`model_requests_total=9`，`platform_accepted_flags=3`。
+- 每例：`turns=3`、`http_calls=2`、`stop_reason=done`；三例 wall 1.949/1.983/2.015 s，flag SHA-256 前缀 `e13f5eeb…`/`c72ae27f…`/`70ca3c79…`。
+- 目标日志：GET `/`（home，含字面 `http://127.0.0.1:<internal>/flag` hint）→ GET `/fetch?url=http%3A%2F%2F%5B%3A%3A1%5D%3A<internal>%2Fflag`（200）→ 平台 correct；denylist 对字面 `127.0.0.1` 返回 403，外部 host/直接 internal origin 被拒；证据中无 flag 明文。
+- 证据：`artifacts/lab-categories/runs/fake-ssrf-20261025T121525Z-e19f8e/`。
+
+镜像内实测（Lead 复核）：
+
+```powershell
+docker run --rm --user root -v "${PWD}:/repo" -w /repo --entrypoint python qutagent:dev `
+  -X utf8 scripts/run_lab.py --model fake --set ssrf --out /repo/artifacts/lab-categories
+```
+
+- 退出码 `0`；`experiment_id = fake-ssrf-20261025T121547Z-4c8f55`；`status=completed`，**3/3 成功**。
+- 汇总：`wall_seconds_total=6.662`，`tokens={input:20865, output:381}`，`model_requests_total=9`，`platform_accepted_flags=3`；每例 `turns=3`、`http_calls=2`、`stop_reason=done`（wall 2.417/2.015/2.026 s）。
+- 证据：`artifacts/lab-categories/runs/fake-ssrf-20261025T121547Z-4c8f55/`（target 日志 `/` + `/fetch` 200，平台 correct）。
+
 ## 4. 测试
 
 ```powershell
 python -X utf8 -m unittest discover -s tests -v
 ```
 
-结果：Windows `Ran 146 tests`、`OK (skipped=4)`（跳过 2 个既有 Linux-only shell 测试 + Pwn Linux E2E + XSS Playwright E2E）；镜像内（`--user root`）`Ran 146 tests`、`OK (skipped=3)`，Pwn/XSS 端到端实际执行。本轮新增 `tests/test_labs_categories.py` 共 18 项（其中 XSS 7 项、MCP read_file 3 项）：
+结果：Windows `Ran 149 tests`、`OK (skipped=4)`（跳过 2 个既有 Linux-only shell 测试 + Pwn Linux E2E + XSS Playwright E2E）；镜像内（`--user root`）`Ran 149 tests`、`OK (skipped=3)`，Pwn/XSS 端到端实际执行。本轮新增 `tests/test_labs_categories.py` 共 21 项（其中 XSS 7 项、MCP read_file 3 项、SSRF 3 项）：
 
 - SQLi 靶题：登录 SQLi + `UNION` 取 flag；布尔 oracle true/false 差异；seed 路由变化与动态 flag。
 - MCP 靶题：`initialize`/`tools/list`/`read_note`/`get_flag`，JSON 与 SSE 两种响应，flag 与 SHA 对应。
@@ -170,6 +204,7 @@ python -X utf8 -m unittest discover -s tests -v
 - Pwn：Windows 下 runner 必须 `blocked`（非伪造）；Pwn 假模型的下发/三连/exp 脚本语法与提交流程做静态回归；Linux+gcc 下 target/runner 端到端测试（本机 skip）。
 - XSS：未转义反射与 `/collect` 存取（`c`/`data` 两种参数）、seed 路由变体与动态 flag、越权 URL 被 400 拒绝、无浏览器时 `/report` 返回 `xss_requires_browser`、Windows runner 必须 `blocked`、XSS 假模型 payload/report/collect/submit 静态回归；Playwright 可用时跑 target/runner 端到端（本机 skip）。
 - MCP `read_file`：工具集含 `read_file` + denied 的 `get_flag`（断言 get_flag 被拒绝且不泄露 flag）、`read_file("policy.txt")` 正常读取、`read_file("../private/flag.txt")` 让真实 tool 参数穿越取 flag、absolute path 与 deployment-root escape 被拒、runner E2E（`--set ai-mcp-traversal`）走 `mcp` action、不调用 get_flag 并得到平台 correct。
+- SSRF：weak denylist 拒绝字面 `http://127.0.0.1:<internal>/flag`、IPv6 `[::1]` 等价 loopback 变体绕过成功取 flag、external host 403、solver 直接访问 internal origin 被 origin allowlist 拒绝、runner E2E（`--set ssrf`）平台 correct。
 
 ## 5. 证据边界与限制
 
@@ -179,17 +214,20 @@ python -X utf8 -m unittest discover -s tests -v
 - SQLi/MCP 在 Windows 上真实运行；Pwn、XSS 在 `qutagent:dev` Linux 镜像内真实运行 3/3；Windows 原生无法执行 Linux ELF、无 Playwright 时，分别正确返回 `blocked`。
 - MCP `read_file` 在 Windows 与 `qutagent:dev` 镜像内都真实运行 3/3：`get_flag` 被明确拒绝，flag 只通过 `read_file` 的 `../private` tool 参数穿越读取；Windows 6.467 s / 镜像 8.693 s 的独立 run 均记录在证据表。
 - XSS 在镜像内 3/3 由真实 Playwright headless Chromium 完成：admin bot 访问反射页并在浏览器内执行 payload、把 Cookie 写回 `/collect`，平台据此判定 flag；Windows 原生无浏览器时 blocked，不伪造。
+- SSRF 在 Windows 与 `qutagent:dev` 镜像内都真实运行 3/3：edge 的弱 hostname denylist 被等价 loopback 变体 `[::1]` 绕过，内部 flag 服务同端口绑定 `127.0.0.1`/`::1` 且不在 platform services；代理仍限制 loopback、不跟随 redirect，未访问任意外部网络。
 - 未访问真实平台、未使用真实模型凭据、未提交 Git。真实模型入口仍沿用 `--model real`：缺 `LLM_*` 时 blocked，不伪造。
 
 ## 6. 证据文件
 
 | 路径 | 内容 |
 |---|---|
-| `artifacts/lab-categories/experiment.json` | 最近一次已落盘的成功运行（当前为镜像 `ai-mcp-traversal`，3/3） |
+| `artifacts/lab-categories/experiment.json` | 最近一次已落盘的成功运行（当前为镜像 `ssrf`，3/3） |
 | `artifacts/lab-categories/runs/fake-web-sqli-*/` | SQLi 3 用例的 task/result/events/submissions/target/platform/model 日志 |
 | `artifacts/lab-categories/runs/fake-ai-mcp-*/` | MCP 直接 get_flag 3 用例同类证据（含 `mcp_calls`） |
 | `artifacts/lab-categories/runs/fake-ai-mcp-traversal-20261025T115419Z-901ae1/` | MCP read_file 目录穿越 Windows 3/3 证据（get_flag denied、tool 参数穿越、平台 correct） |
 | `artifacts/lab-categories/runs/fake-ai-mcp-traversal-20261025T115446Z-089539/` | MCP read_file 目录穿越镜像 3/3 证据（同上，Lead 复核） |
+| `artifacts/lab-categories/runs/fake-ssrf-20261025T121525Z-e19f8e/` | SSRF 弱 denylist 绕过 Windows 3/3 证据（字面 URL 403、等价 loopback 绕过、平台 correct） |
+| `artifacts/lab-categories/runs/fake-ssrf-20261025T121547Z-4c8f55/` | SSRF 弱 denylist 绕过镜像 3/3 证据（同上，Lead 复核） |
 | `artifacts/lab-categories/runs/fake-pwn-20261025T111942Z-cb82ba/` | 镜像内 Pwn 3 用例证据（下载附件、exploit.py、平台 correct） |
 | `artifacts/lab-categories/runs/fake-xss-20261025T114243Z-4e26a9/` | 镜像内 XSS 最终 3/3 证据（seed 变体路由、bot 反射页访问、`/collect?c=` 外带、平台 correct） |
 | `artifacts/lab-categories/runs/fake-xss-20261025T113805Z-08e11f/` | 变体/参数最终调整前的中间 3/3 证据（保留） |
