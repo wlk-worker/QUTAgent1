@@ -1,6 +1,6 @@
 # 镜像注册与独立 Agent 评测 entry：命令、字段与安全闸门
 
-`scripts/platform_flow.py` 覆盖“注册评测 harness（agent 镜像）→ probe → 只读状态 → 以独立参赛者进入评测”的代码路径。所有子命令**默认 dry-run、零 HTTP 请求**；只有显式 `--authorized` 且环境中有 `CTFY_PLATFORM_URL` / `CTFY_TOKEN` 时才发请求。token 不提供命令行参数，不打印、不写入报告。当前没有真实账号 token：**没有注册任何镜像、没有 probe 任何镜像、没有创建任何 entry**，也没有平台审核记录。
+`scripts/platform_flow.py` 覆盖“注册评测 harness（agent 镜像）→ probe → 只读状态 → 以独立参赛者进入评测”的代码路径。所有子命令**默认 dry-run、零 HTTP 请求**；只有显式 `--authorized` 且环境中有 `CTFY_PLATFORM_URL` / `CTFY_TOKEN` 时才发请求。token 不提供命令行参数，不打印、不写入报告。也可以把两个值放到 gitignored 的本地文件并用 `--env-file artifacts/ctfy.env` 加载（只读取 `CTFY_PLATFORM_URL`/`CTFY_TOKEN`，值不回显；模板 `artifacts/ctfy.env.example`）。当前没有真实账号 token：**没有注册任何镜像、没有 probe 任何镜像、没有创建任何 entry**，也没有平台审核记录。
 
 字段以 CTFy 0.7.0 源码快照 `_research/ctfy/pypi/extracted` 为准（路径与行号见下表），不按官网页面文字猜测。
 
@@ -28,6 +28,10 @@ python -X utf8 scripts/platform_flow.py status --competition-id <competition_id>
 python -X utf8 scripts/platform_flow.py probe --harness-id qutagent --authorized --wait-seconds 300
 python -X utf8 scripts/platform_flow.py enter --harness-id qutagent --model-id <model_id> `
   --competition-id <competition_id> --authorized
+
+# 或：从 gitignored artifacts/ctfy.env 读取（推荐，避免 shell history）
+python -X utf8 scripts/platform_flow.py status --competition-id <competition_id> `
+  --authorized --env-file artifacts/ctfy.env
 ```
 
 退出码：`0` 成功/计划生成；`2` 安全闸门阻塞（缺 URL/token、缺必填项、harness 不存在、未审核、模型不可用）；`3` 平台拒绝或传输失败。报告默认写到 `artifacts/participation/`（gitignored），`--json` 打印完整报告；所有响应字段在写入前对已知 token 值再次脱敏。

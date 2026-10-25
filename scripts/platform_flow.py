@@ -67,6 +67,7 @@ from author.controller import _iso_now  # noqa: E402  (shared timestamp helper)
 
 PLATFORM_URL_ENV = "CTFY_PLATFORM_URL"
 TOKEN_ENV = "CTFY_TOKEN"
+PLATFORM_ENV_KEYS = frozenset({PLATFORM_URL_ENV, TOKEN_ENV})
 HARNESS_PATH = "/eval/harnesses"
 ENTRY_PATH = "/eval/entries"
 MODELS_PATH = "/eval/models"
@@ -633,10 +634,43 @@ def enter_flow(*, harness_id: str, model_id: str, competition_id: str,
 # ---------------------------------------------------------------------------
 
 
+def load_platform_env_file(path: str | Path | None) -> int:
+    """Load only CTFY_PLATFORM_URL/CTFY_TOKEN from a local KEY=VALUE file.
+
+    The file is gitignored and never copied into a report. Values are not
+    printed; returning the count is safe. Unknown keys are ignored.
+    """
+    if not path:
+        return 0
+    source = Path(path)
+    text = source.read_text(encoding="utf-8")
+    loaded = 0
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key.startswith("export "):
+            key = key[len("export "):].strip()
+        if key not in PLATFORM_ENV_KEYS:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        if value:
+            os.environ[key] = value
+            loaded += 1
+    return loaded
+
+
 def _add_auth(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--authorized", action="store_true",
                         help="explicitly allow HTTP calls; requires CTFY_PLATFORM_URL "
                              "and CTFY_TOKEN in the environment")
+    parser.add_argument("--env-file", default="",
+                        help="optional local KEY=VALUE file with CTFY_PLATFORM_URL/CTFY_TOKEN; "
+                             "values are not echoed")
     parser.add_argument("--json", action="store_true", help="print the full report JSON")
     parser.add_argument("--report-dir", type=Path, default=DEFAULT_REPORT_DIR)
     parser.add_argument("--report", type=Path, default=None,
@@ -706,6 +740,14 @@ def _print_summary(report: Mapping[str, Any]) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+    if getattr(args, "env_file", ""):
+        try:
+            count = load_platform_env_file(args.env_file)
+        except OSError as exc:
+            print(f"cannot read --env-file: {type(exc).__name__}", file=sys.stderr)
+            return 2
+        print(f"loaded {count} CTFY_* value(s) from --env-file (values not printed)",
+              file=sys.stderr)
     kwargs = dict(authorized=args.authorized, report_dir=args.report_dir,
                   report_path=args.report)
     try:
