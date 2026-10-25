@@ -18,6 +18,14 @@ Copy-Item artifacts\llm.env.example artifacts\llm.env
 
 ## 2. 运行 validation 集（推荐先跑 3 题）
 
+先检查字段是否齐全（只显示 set/MISSING，不回显值）：
+
+```powershell
+python -X utf8 scripts/check_llm_env.py --env-file artifacts\llm.env
+```
+
+再运行：
+
 ```powershell
 python -X utf8 scripts/run_lab.py --model real --set validation --llm-env-file artifacts\llm.env
 ```

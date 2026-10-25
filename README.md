@@ -40,6 +40,7 @@ python -X utf8 -m unittest discover -s tests -v          # 149 项，OK (skipped
 python -X utf8 scripts/run_local.py                      # 入口/dry-run 契约
 python -X utf8 scripts/run_lab.py --model fake --set dev # 靶题 + 假模型 3/3
 python -X utf8 scripts/run_lab.py --model real --set validation  # 无 LLM_* 时 blocked，不伪造
+python -X utf8 scripts/check_llm_env.py --env-file artifacts/llm.env  # 只显示 set/MISSING
 python -X utf8 scripts/run_lab.py --model real --set validation --llm-env-file artifacts/llm.env  # 可选的本地凭据文件
 python -X utf8 author/controller.py --seed 46 --dry-run  # 出题 dry-run，零网络
 python -X utf8 scripts/platform_flow.py register-harness --id qutagent `
