@@ -83,7 +83,7 @@
 |---|---|---|
 | Windows 全量测试 | `python -X utf8 -m unittest discover -s tests -v` → **Ran 146 tests, OK (skipped=4)** | 代码/契约/本地闭环；新增 61 项 skills/loop/HTTP/MCP（含 MCP auth header）+ 18 项 SQLi/MCP/Pwn/XSS/MCP 文件穿越分类靶题 |
 | 镜像内全量测试 | `docker run --rm --user root -v "$PWD:/repo" -w /repo --entrypoint python qutagent:dev -X utf8 -m unittest discover -s tests -v` → **Ran 146 tests, OK (skipped=3)** | Linux 镜像内执行，Pwn/XSS 端到端实际运行；仍不是平台/真实模型验证 |
-| 镜像工具链构建 | `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` → 成功，完整 **1078 s** + `ctf-browse`/skills/MCP auth 增量重建，镜像 `sha256:16c4d813…`，内容 `943,209,481` B ≈ 0.88 GiB，磁盘 3.57 GB | 构建期联网安装；评测期离线 |
+| 镜像工具链构建 | `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` → 成功，完整 **1078 s** + `ctf-browse`/skills/MCP auth 增量重建，镜像 `sha256:fb7596a2…`，内容 `943,210,322` B ≈ 0.88 GiB，磁盘 3.57 GB | 构建期联网安装；评测期离线 |
 | 工具链 required 检查 | `docker run --rm --entrypoint python qutagent:dev /app/scripts/check_toolchain.py` → exit 0，`verdict: passed`，**required_failed: []**，`optional_failed: ["import:angr"]` | 66 项检查；angr 为已知 optional 缺失 |
 | 离线检查 | 同上加 `--network none` → exit 0 / passed | 运行期工具链不依赖网络 |
 | 官方本地镜像检查 | `ctfy agent check qutagent:dev --json` → `verdict: passed`、`ran_locally: true`、`findings: []` | CTFY-0001 本地 dry run；不是平台审核 |

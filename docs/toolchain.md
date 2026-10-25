@@ -10,9 +10,9 @@ Web / Pwn / AI 安全工具链，并在 WSL Ubuntu-24.04 的 Docker 中**实际�
 |---|---|
 | 构建命令 | `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` |
 | 基础镜像 | `python:3.11-slim`（构建时解析为 Debian 13 trixie；本地 ID `cce12316475d`，见下方 digest） |
-| 最终镜像 | `qutagent:dev`，ID `sha256:16c4d813e409646c2a2250c4cbdfa9bbad25c6b3b197ac440cd70f42dd9836a8`（含 skills/MCP auth header/`ctf-browse` 的最终层）；历史 `15d3989d…`/`78d1b491…`/`2e1060c9…` 为上一版 |
+| 最终镜像 | `qutagent:dev`，ID `sha256:fb7596a2f87e47f948ea0f80e8493921a1f3c359c01eea4d3244109230b4b3ac`（含 skills/MCP auth header/`ctf-browse` 的最终层）；历史 `15d3989d…`/`78d1b491…`/`2e1060c9…` 为上一版 |
 | 最终完整重建耗时 | **1078 s（约 18 分钟）**，8 vCPU WSL；BuildKit 复用了 apt 层缓存，radare2 / Python / Playwright 层重建。追加 `ctf-browse` 后仅 COPY 层失效，增量重建 **39.8 s** |
-| 镜像内容大小 | `943,209,481` 字节 ≈ **900 MiB / 0.88 GiB**（`docker image inspect .Size`，压缩层合计） |
+| 镜像内容大小 | `943,210,322` 字节 ≈ **900 MiB / 0.88 GiB**（`docker image inspect .Size`，压缩层合计） |
 | 容器磁盘占用 | `docker images` DISK USAGE ≈ **3.57 GB**（Docker 29 containerd 存储口径，解包后） |
 | 镜像架构 / 用户 | `linux/amd64`；UID 10001（`agent`），工作目录 `/ctfy/work` |
 | 入口 | `ENTRYPOINT ["python", "/app/agent/main.py"]`（绝对路径，未改运行契约） |
@@ -195,7 +195,7 @@ docker run --rm --entrypoint bash qutagent:dev -c '
 
 | 验证 | 命令 | 结果 | 能证明什么 |
 |---|---|---|---|
-| 镜像构建 | `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` | 成功，ID `sha256:16c4d813…`，完整 1078 s + 多次增量重建（最近一次 MCP auth header 层） | Dockerfile 可从当前源码构建出 linux/amd64 镜像 |
+| 镜像构建 | `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` | 成功，ID `sha256:fb7596a2…`，完整 1078 s + 多次增量重建（最近一次 MCP auth header 层） | Dockerfile 可从当前源码构建出 linux/amd64 镜像 |
 | 工具链自检 | `docker run --rm --entrypoint python qutagent:dev /app/scripts/check_toolchain.py` | exit 0，`verdict: passed`，`required_failed: []` | 66 项 required/optional 能力实际在镜像内可用；angr 为唯一 optional 缺失 |
 | 离线自检 | `docker run --rm --network none …` | exit 0，`verdict: passed` | 工具链运行不依赖联网 |
 | 官方镜像检查 | `ctfy agent check qutagent:dev --json` | `passed`、`ran_locally: true`、0 findings | CTFY-0001 本地 dry run/契约通过；不是平台审核 |
