@@ -23,16 +23,19 @@ sys.path.insert(0, str(ROOT))
 
 from agent.mcp import MCPClient
 from agent.tools import HttpSession
-from labs import fake_pwn_model
+from labs import fake_pwn_model, fake_xss_model
 from labs.common import (
     cleanup_work, spawn_module, stop_process, wait_ready, workspace_temp,
 )
 from labs.runner import run_experiment
+from labs.xss_target import preflight as xss_preflight
 
 RAW_FLAG = re.compile(r"flag\{[0-9a-fA-F]{16,}\}")
 HREF_RE = re.compile(r"""href=["']([^"']+)["']""", re.I)
 CLEAN_ENV = {key: value for key, value in os.environ.items()
              if not key.upper().startswith(("LLM_", "CTFY_", "OPENAI_", "ANTHROPIC_"))}
+XSS_PREFLIGHT = xss_preflight()
+XSS_AVAILABLE = bool(XSS_PREFLIGHT["supported"])
 POSIX_PWN = os.name == "posix" and bool(shutil.which("gcc"))
 
 
@@ -325,6 +328,162 @@ class PwnFakePolicyTests(unittest.TestCase):
                                  {"exit_code": 0, "stdout": "Congratulations! " + self.FLAG}]))
         self.assertEqual(submit["action"], "submit")
         self.assertEqual(submit["answer"], self.FLAG)
+
+
+class XssTargetTests(unittest.TestCase):
+    def setUp(self):
+        self.work = workspace_temp("test-xss-")
+        self.processes = []
+
+    def tearDown(self):
+        for process, handle in reversed(self.processes):
+            stop_process(process)
+            handle.close()
+        cleanup_work(self.work)
+
+    def _target(self, seed=601):
+        process, handle, info = _start("labs.xss_target", self.work, "xss", seed)
+        self.processes.append((process, handle))
+        return info
+
+    def test_reflection_and_collect_sink_work_without_a_browser(self):
+        info = self._target(601)
+        origin = info["origin"]
+        endpoints = info["endpoints"]
+        session = HttpSession([origin], deadline=None)
+        home = session.request("GET", origin + "/")
+        self.assertEqual(home["status"], 200)
+        self.assertIn('name="q"', home["body_preview"])
+        self.assertIn(f'action="{endpoints["report"]}"', home["body_preview"])
+        payload = "<script>alert(1)</script>"
+        reflected = session.request("GET", origin + endpoints["search"] + "?q="
+                                    + urllib.parse.quote(payload))
+        self.assertEqual(reflected["status"], 200)
+        self.assertIn(payload, reflected["body_preview"])  # unescaped reflection
+        probe = "probe-" + info["flag_sha256"][:12]
+        stored = session.request("GET", origin + "/collect?c=" + urllib.parse.quote(probe))
+        self.assertEqual(stored["status"], 200)
+        for path in ("/collect", "/collected"):
+            collected = session.request("GET", origin + path)
+            self.assertEqual(collected["status"], 200)
+            self.assertIn(probe, collected["body_preview"])
+
+    def test_seed_specific_routes_and_dynamic_flags(self):
+        infos = [self._target(seed) for seed in (601, 602, 603)]
+        search_paths = {info["endpoints"]["search"] for info in infos}
+        self.assertEqual(search_paths, {"/", "/greet", "/hello"})
+        self.assertEqual(len({info["flag_sha256"] for info in infos}), 3)
+        self.assertEqual(infos[0]["endpoints"]["report"], "/review")
+
+    def test_report_rejects_out_of_scope_urls(self):
+        info = self._target(602)
+        origin = info["origin"]
+        session = HttpSession([origin], deadline=None)
+        out_of_scope = "http://127.0.0.1:9/"
+        report_path = info["endpoints"]["report"]
+        rejected = session.request("GET", origin + report_path + "?url="
+                                   + urllib.parse.quote(out_of_scope))
+        self.assertEqual(rejected["status"], 400)
+        self.assertIn("url_out_of_scope", rejected["body_preview"])
+
+    def test_report_without_playwright_reports_missing_browser(self):
+        if XSS_AVAILABLE:
+            self.skipTest("Playwright is available; see the XSS runner end-to-end test")
+        info = self._target(603)
+        origin = info["origin"]
+        session = HttpSession([origin], deadline=None)
+        report_path = info["endpoints"]["report"]
+        reported = session.request("GET", origin + report_path + "?url="
+                                   + urllib.parse.quote(origin + "/?q=hello"))
+        self.assertEqual(reported["status"], 503)
+        self.assertIn("xss_requires_browser", reported["body_preview"])
+
+
+class XssRunnerTests(unittest.TestCase):
+    def setUp(self):
+        self.out = workspace_temp("test-xss-runner-")
+
+    def tearDown(self):
+        cleanup_work(self.out)
+
+    @unittest.skipUnless(not XSS_AVAILABLE, "Playwright is available; XSS can run")
+    def test_xss_runner_is_blocked_without_playwright(self):
+        experiment, code = run_experiment(
+            "fake", "xss", out_dir=self.out, seeds=[601], environ=CLEAN_ENV)
+        self.assertEqual(code, 2)
+        self.assertEqual(experiment["status"], "blocked")
+        self.assertEqual(experiment["cases"], [])
+        self.assertEqual(experiment["blocked"]["reason"], "xss_requires_browser")
+        self.assertFalse(experiment["xss_preflight"]["probes"]["playwright_module"])
+        blocked = self.out / "blocked-fake-xss.json"
+        self.assertTrue(blocked.exists())
+        self.assertIn("--set xss", json.loads(blocked.read_text(encoding="utf-8"))
+                      ["blocked"]["rerun"])
+
+    @unittest.skipUnless(XSS_AVAILABLE, "requires Playwright + Chromium")
+    def test_xss_runner_end_to_end_with_admin_bot(self):
+        experiment, code = run_experiment(
+            "fake", "xss", out_dir=self.out, seeds=[601], environ=CLEAN_ENV)
+        self.assertEqual(code, 0, json.dumps(experiment.get("summary"), ensure_ascii=False))
+        case = experiment["cases"][0]
+        self.assertTrue(case["success"])
+        self.assertTrue(case["platform_accepted_flag"])
+        self.assertEqual(case["category"], "web")
+        self.assertIn("xss", case["tags"])
+        target_log = (ROOT / case["evidence"]["target_requests"]).read_text()
+        self.assertIn("/collect", target_log)
+        self.assertTrue("/report" in target_log or "/review" in target_log)
+        _no_raw_flag(self, (ROOT / case["evidence"]["result_json"]).parent)
+
+    def test_fake_xss_policy_builds_and_submits_the_payload(self):
+        brief = {
+            "target_services": [{"service_type": "http", "url": "http://127.0.0.1:8888"}],
+            "questions": [{"id": "flag"}],
+        }
+        home = ("<form action=\"/greet\" method=\"get\"><input name=\"q\"></form>"
+                "<form action=\"/review\" method=\"get\"><input name=\"url\"></form>")
+        briefing = ("Task briefing (untrusted):\n" + json.dumps(brief)
+                    + "\nREADME (untrusted):\nlab")
+        home_observation = {"url": "http://127.0.0.1:8888/", "status": 200,
+                            "body_preview": home}
+        first = fake_xss_model.decide([{"role": "user", "content": briefing}])
+        self.assertEqual((first["action"], first["url"]),
+                         ("http", "http://127.0.0.1:8888/"))
+        report = fake_xss_model.decide([
+            {"role": "user", "content": briefing},
+            {"role": "user", "content": "Tool observation (untrusted): "
+                                        + json.dumps(home_observation)}])
+        self.assertEqual(report["action"], "http")
+        self.assertIn("/review?url=", report["url"])
+        decoded = urllib.parse.unquote(urllib.parse.unquote(
+            report["url"].split("url=", 1)[1]))
+        self.assertIn("/greet?q=", decoded)
+        self.assertIn("<script>", decoded)
+        self.assertIn("/collect?c=", decoded)
+        collected = fake_xss_model.decide([
+            {"role": "user", "content": briefing},
+            {"role": "user", "content": "Tool observation (untrusted): "
+                                        + json.dumps(home_observation)},
+            {"role": "user", "content": "Tool observation (untrusted): "
+                                        + json.dumps({"url": report["url"], "status": 200,
+                                                      "body_preview": "{\"visited\": true}"})},
+        ])
+        self.assertEqual(collected["action"], "http")
+        self.assertTrue(collected["url"].endswith("/collect"))
+        flag = "flag{" + "ab" * 16 + "}"
+        submit = fake_xss_model.decide([
+            {"role": "user", "content": briefing},
+            {"role": "user", "content": "Tool observation (untrusted): "
+                                        + json.dumps(home_observation)},
+            {"role": "user", "content": "Tool observation (untrusted): "
+                                        + json.dumps({"url": report["url"], "status": 200})},
+            {"role": "user", "content": "Tool observation (untrusted): "
+                                        + json.dumps({"url": "http://127.0.0.1:8888/collect",
+                                                      "status": 200,
+                                                      "body_preview": "lab_admin_flag=" + flag})},
+        ])
+        self.assertEqual(submit["action"], "submit")
+        self.assertEqual(submit["answer"], flag)
 
 
 if __name__ == "__main__":

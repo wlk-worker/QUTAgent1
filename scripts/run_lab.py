@@ -97,6 +97,7 @@ def _summary_view(experiment: dict) -> dict:
         "summary": experiment.get("summary"),
         "blocked": experiment.get("blocked"),
         "pwn_preflight": experiment.get("pwn_preflight"),
+        "xss_preflight": experiment.get("xss_preflight"),
         "error": experiment.get("error"),
         "experiment_json": (experiment.get("evidence") or {}).get("experiment_json"),
         "cases": cases,

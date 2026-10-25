@@ -92,6 +92,18 @@ EXPERIMENTS = {
         "web_only": False,
         "description": "Linux amd64 ret2win lab: requires a POSIX host with gcc (image/WSL).",
     },
+    "xss": {
+        "kind": "xss",
+        "seeds": (601, 602, 603),
+        "timeout_s": 60,
+        "max_turns": 10,
+        "max_requests": 10,
+        "target_module": "labs.xss_target",
+        "fake_model": "labs.fake_xss_model",
+        "web_only": True,
+        "description": ("Reflected-XSS + Playwright admin-bot + /collect lab: requires the "
+                        "qutagent:dev image (Playwright/Chromium) or another Playwright host."),
+    },
 }
 
 REAL_CREDENTIAL_FIELDS = ("LLM_FLAVOR", "LLM_MODEL", "LLM_API_KEY")
@@ -436,6 +448,14 @@ def _pwn_preflight() -> dict:
     return preflight()
 
 
+def _xss_preflight() -> dict:
+    try:
+        from .xss_target import preflight
+    except ImportError:  # direct script execution
+        from xss_target import preflight
+    return preflight()
+
+
 def run_category_case(set_name: str, seed: int, model: str, budget: dict, run_dir: Path,
                       config: dict, *, credentials: dict | None = None,
                       verbose: bool = False) -> dict:
@@ -706,6 +726,34 @@ def run_experiment(model: str, set_name: str, *, out_dir: Path | str | None = No
             write_json(run_dir / "experiment.json", experiment)
             write_json(out_root / "experiment.json", experiment)
             write_json(out_root / f"blocked-{model}-pwn.json", experiment)
+            return experiment, 2
+
+    if kind == "xss":
+        preflight = _xss_preflight()
+        experiment["xss_preflight"] = preflight
+        if not preflight["supported"]:
+            experiment.update({
+                "status": "blocked",
+                "blocked": {
+                    "reason": preflight["reason"],
+                    "note": "The XSS lab needs Playwright with a Chromium executable for the "
+                            "admin bot (the qutagent:dev image provides both). No XSS result was "
+                            "produced on this host and nothing is faked; other sets are unaffected.",
+                    "probes": preflight["probes"],
+                    "rerun": (f"docker run --rm --user root -v \"$PWD:/repo\" -w /repo "
+                              f"--entrypoint python qutagent:dev -X utf8 scripts/run_lab.py "
+                              f"--model {model} --set xss --out /repo/artifacts/lab-categories"),
+                },
+                "cases": [],
+                "summary": _summarize([], time.monotonic() - started),
+            })
+            experiment["evidence"].update({
+                "run_dir": relative_to_workspace(run_dir),
+                "experiment_json": relative_to_workspace(run_dir / "experiment.json"),
+            })
+            write_json(run_dir / "experiment.json", experiment)
+            write_json(out_root / "experiment.json", experiment)
+            write_json(out_root / f"blocked-{model}-xss.json", experiment)
             return experiment, 2
 
     credentials: dict | None = None

@@ -32,11 +32,13 @@ FLAG_PATTERN = re.compile(r"flag\{[0-9a-fA-F]{16,}\}")
 
 # Only these inherited variables reach lab child processes. In particular no
 # LLM_*, CTFY_* or other credential-looking variable is forwarded by accident.
+# PLAYWRIGHT_BROWSERS_PATH/HOME are needed by the XSS lab's headless Chromium in
+# the qutagent:dev image; they contain no credentials.
 CHILD_ENV_ALLOWLIST = {
     "PATH", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "LANG", "LC_ALL",
     "LC_CTYPE", "TZ", "TERM", "TMPDIR", "TEMP", "TMP", "USERPROFILE",
     "APPDATA", "LOCALAPPDATA", "HOMEDRIVE", "HOMEPATH", "PYTHONIOENCODING",
-    "PYTHONUTF8",
+    "PYTHONUTF8", "HOME", "XDG_CACHE_HOME", "PLAYWRIGHT_BROWSERS_PATH",
 }
 
 
