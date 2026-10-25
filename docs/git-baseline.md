@@ -1,6 +1,6 @@
 # 协作基线（Git / 环境 / 证据）
 
-更新：2026-10-25。基线提交：`bbde74a chore: establish local prototype baseline`；历史功能提交：`255c262 feat: add isolated web lab, http tool, and authoring/participation flows`；本轮融合提交：`d682dfb feat: integrate CTF agent skills, MCP and Web/Pwn/AI toolchain`；后续证据文档提交：`22dbfab`、`cefe5d0`。
+更新：2026-10-25。基线提交：`bbde74a chore: establish local prototype baseline`；历史功能提交：`255c262 feat: add isolated web lab, http tool, and authoring/participation flows`；本轮融合提交：`d682dfb feat: integrate CTF agent skills, MCP and Web/Pwn/AI toolchain`；分类靶题提交：`3d058df`、`23fa5e0`；后续证据文档提交：`22dbfab`、`cefe5d0`、`b934810`。
 
 ## 1. 当前纳入版本控制的内容
 
