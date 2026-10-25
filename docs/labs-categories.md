@@ -1,13 +1,14 @@
-# 分类靶题实验：SQLi / MCP(AI) / Pwn / XSS
+# 分类靶题实验：SQLi / MCP(AI) / Pwn / XSS / MCP read_file
 
-记录时间：2026-10-25（北京时间）。这一轮把单一路径穿越靶题扩展为四类本地授权靶题，SQLi、MCP(AI)、Pwn、XSS 都做了假模型闭环：SQLi/MCP 在 Windows 真跑 3/3；Pwn 在 `qutagent:dev` Linux 镜像内真跑 **3/3**（Windows 原生仍会正确 `blocked`）；XSS（反射 + Playwright admin bot + `/collect`）在 `qutagent:dev` 镜像内真跑 **3/3**（Windows 原生无 Playwright 时正确 `blocked`）。XSS 第一次镜像运行 0/3 暴露了 `/report` 二次 `unquote` 的 bug，修正后重跑 3/3；相关证据都保留。实验仍处于**进程级/合成靶题/无真实平台**的证据等级。
+记录时间：2026-10-25（北京时间）。这一轮把单一路径穿越靶题扩展为多类本地授权靶题，SQLi、MCP(AI)、Pwn、XSS、MCP `read_file` 都做了假模型闭环：SQLi/MCP/MCP read_file 在 Windows 真跑 3/3；Pwn 在 `qutagent:dev` Linux 镜像内真跑 **3/3**（Windows 原生仍会正确 `blocked`）；XSS（反射 + Playwright admin bot + `/collect`）在 `qutagent:dev` 镜像内真跑 **3/3**（Windows 原生无 Playwright 时正确 `blocked`）；新增的 MCP `read_file` 靶题用真实的 tool 参数目录穿越（没有 `get_flag` 直读工具）取 flag。XSS 第一次镜像运行 0/3 暴露了 `/report` 二次 `unquote` 的 bug，修正后重跑 3/3；相关证据都保留。实验仍处于**进程级/合成靶题/无真实平台**的证据等级。
 
 ## 1. 固定数据集与预算
 
 | `--set` | 题型 | seeds | timeout | max_turns | max_requests | web-only |
 |---|---|---|---|---|---|---|
 | `web-sqli` | Web SQL 注入 | 301, 302, 303 | 60 s | 10 | 10 | 是（shell 禁用） |
-| `ai-mcp` | AI / MCP | 401, 402, 403 | 60 s | 8 | 8 | 是（shell 禁用） |
+| `ai-mcp` | AI / MCP（直接 get_flag） | 401, 402, 403 | 60 s | 8 | 8 | 是（shell 禁用） |
+| `ai-mcp-traversal` | AI / MCP `read_file` 目录穿越 | 701, 702, 703 | 60 s | 8 | 8 | 是（shell 禁用） |
 | `pwn` | Linux amd64 ret2win | 501, 502, 503 | 90 s | 12 | 12 | 否（需要 shell 跑 exp） |
 | `xss` | 反射 XSS + admin bot | 601, 602, 603 | 60 s | 10 | 10 | 是（shell 禁用；bot 在靶题侧） |
 | `dev` / `validation` | 原路径穿越 | 101–103 / 201–203 | 60 s | 8 | 8 | 是 |
@@ -47,6 +48,14 @@
 - 假模型链路：`GET /` 发现搜索参数与 report 表单 → 构造 `<script>fetch('/collect?c='+encodeURIComponent(document.cookie))</script>` 反射 URL → 交给 report（同步等待 bot）→ 轮询 `/collect` → 提取 flag → submit；失败时切换 `<img onerror>` 等 payload 变体。
 - **执行前提**：Python Playwright + Chromium（`qutagent:dev` 镜像已装）。没有浏览器时 target 仍可启动并允许检查反射/收集，但 `/report` 返回 `xss_requires_browser`，runner 对整个 set 返回 `blocked`（reason=`xss_requires_browser`），不伪造成功。
 - 平台 challenge：`category=web`，`tags=["xss","web","admin-bot","lab"]`。
+
+### 2.5 MCP `read_file` 目录穿越（`labs/mcp_traversal_target.py` + `labs/fake_mcp_traversal_model.py`）
+
+- 新的 AI/MCP 靶题暴露 `read_file(path)`（文档称读取 notes 目录）与一个**明确 denied** 的 `get_flag`（防止直接取 flag）；flag 位于 `<root>/private/flag.txt`，notes 目录是 `<root>/notes`。
+- 漏洞是真实工具参数处理错误：`read_file` 把 caller-controlled `path` 直接拼到 `<root>/notes/` 上，没有做 notes 根包含检查；`read_file({"path":"../private/flag.txt"})` 即真实 MCP `tools/call` 参数目录穿越，不是 HTTP 路径或直接 flag 工具。为防读到宿主文件，仍保留 deployment-root 包含检查与 absolute path 拒绝。
+- tool 结果：`read_file` 用 SSE 返回 `content[].text` + `structuredContent`；`get_flag` 返回 `isError=true` 的 `direct flag access denied`。
+- 假模型链路：`list_tools` → `read_file("policy.txt")`（正常读取）→ `read_file("../private/flag.txt")`（失败时尝试 `./../private/flag.txt` 等变体）→ 从 tool 响应取 flag → submit；全程使用 agent 的 `mcp` action，且不调用 `get_flag`。
+- 平台 challenge：`category=ai`，`tags=["mcp","tool-traversal","agentic_ai","lab"]`；纯标准库，Windows 与镜像都可跑。
 
 ## 3. 实际运行命令与结果（2026-10-25）
 
@@ -122,19 +131,45 @@ docker run --rm --user root -v "${PWD}:/repo" -w /repo --entrypoint python qutag
 - 证据：`artifacts/lab-categories/runs/fake-xss-20261025T114243Z-4e26a9/`（cases/xss-601..603，含 target/platform/model/result/events/submissions 日志）。
 - 首轮镜像 0/3（`fake-xss-20261025T113554Z-88ad04`）暴露 `/report` 对已解码 URL 二次 `unquote`，`%2B`→`+` 后被 query parser 当空格，XSS 语法失效；修正为不再二次 `unquote` 后 3/3。后续补齐 seed 路由变体/`?c=`/错误码/60 s 预算后的最终 3/3 为上表 `4e26a9`；中间 `08e11f` 也保留。失败运行目录保留作为修复依据，未删除。
 
+### 3.5 MCP `read_file` 目录穿越（Windows 真跑 3/3；镜像真跑 3/3）
+
+Windows 实测（纯标准库 MCP 服务，无浏览器/无 Linux 依赖）：
+
+```powershell
+python -X utf8 scripts/run_lab.py --model fake --set ai-mcp-traversal --out artifacts\lab-categories
+```
+
+- 退出码 `0`；`experiment_id = fake-ai-mcp-traversal-20261025T115419Z-901ae1`；`status=completed`，**3/3 成功**。
+- 汇总：`wall_seconds_total=6.467`，`tokens={input:25035, output:513}`，`model_requests_total=12`，`platform_accepted_flags=3`。
+- 每例：`turns=4`、`mcp_calls=3`、`stop_reason=done`；三例 wall 2.151/2.126/2.163 s，flag SHA-256 前缀 `4b26c106…`/`d3c5113e…`/`4c67ca67…`。
+- 真实 tool 调用链：`initialize` → `notifications/initialized` → `tools/list` → `tools/call read_file {"path":"policy.txt"}` → `tools/call read_file {"path":"../private/flag.txt"}` → 平台 correct；工具集含 `get_flag` 但**明确 denied**，fake model 全程不调用它；目标日志含 `tools/list` 与两次 `tools/call`，事件记录中无 flag 明文。
+- 证据：`artifacts/lab-categories/runs/fake-ai-mcp-traversal-20261025T115419Z-901ae1/`（cases/ai-mcp-traversal-701..703，含 target/platform/model/result/events/submissions 日志）。
+
+镜像内实测（Lead 复核，同一命令加 `docker run`）：
+
+```powershell
+docker run --rm --user root -v "${PWD}:/repo" -w /repo --entrypoint python qutagent:dev `
+  -X utf8 scripts/run_lab.py --model fake --set ai-mcp-traversal --out /repo/artifacts/lab-categories
+```
+
+- 退出码 `0`；`experiment_id = fake-ai-mcp-traversal-20261025T115446Z-089539`；`status=completed`，**3/3 成功**。
+- 汇总：`wall_seconds_total=8.693`，`tokens={input:25032, output:513}`，`model_requests_total=12`，`platform_accepted_flags=3`；每例 `turns=4`、`mcp_calls=3`、`stop_reason=done`（wall 4.065/2.180/2.226 s）。
+- 证据：`artifacts/lab-categories/runs/fake-ai-mcp-traversal-20261025T115446Z-089539/`（cases/ai-mcp-traversal-701..703，target 日志含 `tools/list` + 两次 `tools/call`，平台 correct）。
+
 ## 4. 测试
 
 ```powershell
 python -X utf8 -m unittest discover -s tests -v
 ```
 
-结果：Windows `Ran 141 tests`、`OK (skipped=4)`（跳过 2 个既有 Linux-only shell 测试 + Pwn Linux E2E + XSS Playwright E2E）；镜像内（`--user root`）`Ran 141 tests`、`OK (skipped=3)`，Pwn/XSS 端到端都实际执行。XSS 集已在镜像内真实 3/3（见 3.4）。本轮新增 `tests/test_labs_categories.py` 共 15 项（其中 XSS 7 项）：
+结果：Windows `Ran 144 tests`、`OK (skipped=4)`（跳过 2 个既有 Linux-only shell 测试 + Pwn Linux E2E + XSS Playwright E2E）；镜像内（`--user root`）`Ran 144 tests`、`OK (skipped=3)`，Pwn/XSS 端到端实际执行。本轮新增 `tests/test_labs_categories.py` 共 18 项（其中 XSS 7 项、MCP read_file 3 项）：
 
 - SQLi 靶题：登录 SQLi + `UNION` 取 flag；布尔 oracle true/false 差异；seed 路由变化与动态 flag。
 - MCP 靶题：`initialize`/`tools/list`/`read_note`/`get_flag`，JSON 与 SSE 两种响应，flag 与 SHA 对应。
 - runner 端到端：`web-sqli`、`ai-mcp` 假模型闭环成功，平台真实接受；证据无 flag 明文。
 - Pwn：Windows 下 runner 必须 `blocked`（非伪造）；Pwn 假模型的下发/三连/exp 脚本语法与提交流程做静态回归；Linux+gcc 下 target/runner 端到端测试（本机 skip）。
 - XSS：未转义反射与 `/collect` 存取（`c`/`data` 两种参数）、seed 路由变体与动态 flag、越权 URL 被 400 拒绝、无浏览器时 `/report` 返回 `xss_requires_browser`、Windows runner 必须 `blocked`、XSS 假模型 payload/report/collect/submit 静态回归；Playwright 可用时跑 target/runner 端到端（本机 skip）。
+- MCP `read_file`：工具集含 `read_file` + denied 的 `get_flag`（断言 get_flag 被拒绝且不泄露 flag）、`read_file("policy.txt")` 正常读取、`read_file("../private/flag.txt")` 让真实 tool 参数穿越取 flag、absolute path 与 deployment-root escape 被拒、runner E2E（`--set ai-mcp-traversal`）走 `mcp` action、不调用 get_flag 并得到平台 correct。
 
 ## 5. 证据边界与限制
 
@@ -142,6 +177,7 @@ python -X utf8 -m unittest discover -s tests -v
 - 假模型是脚本化的“链路验证器”，成功只证明 **模型 HTTP 协议 → agent 工具（http/mcp/shell/download）→ mock 平台提交** 的全链路在本地靶题上可运行，**不代表任何真实模型的解题能力**。
 - mock 平台真实比较动态 flag 并记录 `correct=true`，但它是**本地合成平台**，不是真实 CTFy 平台接受，也不是比赛成绩。
 - SQLi/MCP 在 Windows 上真实运行；Pwn、XSS 在 `qutagent:dev` Linux 镜像内真实运行 3/3；Windows 原生无法执行 Linux ELF、无 Playwright 时，分别正确返回 `blocked`。
+- MCP `read_file` 在 Windows 与 `qutagent:dev` 镜像内都真实运行 3/3：`get_flag` 被明确拒绝，flag 只通过 `read_file` 的 `../private` tool 参数穿越读取；Windows 6.467 s / 镜像 8.693 s 的独立 run 均记录在证据表。
 - XSS 在镜像内 3/3 由真实 Playwright headless Chromium 完成：admin bot 访问反射页并在浏览器内执行 payload、把 Cookie 写回 `/collect`，平台据此判定 flag；Windows 原生无浏览器时 blocked，不伪造。
 - 未访问真实平台、未使用真实模型凭据、未提交 Git。真实模型入口仍沿用 `--model real`：缺 `LLM_*` 时 blocked，不伪造。
 
@@ -149,9 +185,11 @@ python -X utf8 -m unittest discover -s tests -v
 
 | 路径 | 内容 |
 |---|---|
-| `artifacts/lab-categories/experiment.json` | 最近一次已落盘的成功运行（当前为镜像内 `xss`，3/3） |
+| `artifacts/lab-categories/experiment.json` | 最近一次已落盘的成功运行（当前为镜像 `ai-mcp-traversal`，3/3） |
 | `artifacts/lab-categories/runs/fake-web-sqli-*/` | SQLi 3 用例的 task/result/events/submissions/target/platform/model 日志 |
-| `artifacts/lab-categories/runs/fake-ai-mcp-*/` | MCP 3 用例同类证据（含 `mcp_calls`） |
+| `artifacts/lab-categories/runs/fake-ai-mcp-*/` | MCP 直接 get_flag 3 用例同类证据（含 `mcp_calls`） |
+| `artifacts/lab-categories/runs/fake-ai-mcp-traversal-20261025T115419Z-901ae1/` | MCP read_file 目录穿越 Windows 3/3 证据（get_flag denied、tool 参数穿越、平台 correct） |
+| `artifacts/lab-categories/runs/fake-ai-mcp-traversal-20261025T115446Z-089539/` | MCP read_file 目录穿越镜像 3/3 证据（同上，Lead 复核） |
 | `artifacts/lab-categories/runs/fake-pwn-20261025T111942Z-cb82ba/` | 镜像内 Pwn 3 用例证据（下载附件、exploit.py、平台 correct） |
 | `artifacts/lab-categories/runs/fake-xss-20261025T114243Z-4e26a9/` | 镜像内 XSS 最终 3/3 证据（seed 变体路由、bot 反射页访问、`/collect?c=` 外带、平台 correct） |
 | `artifacts/lab-categories/runs/fake-xss-20261025T113805Z-08e11f/` | 变体/参数最终调整前的中间 3/3 证据（保留） |

@@ -31,8 +31,8 @@
 
 - G0：公开规则审计及未知项记录已完成；赛道附件仍未找到，已整理可直接发送的 [规则询问清单](rules-request.md)。
 - G1：本地构建、dry run 与官方 `agent check` 已通过。
-- G2：Windows 全量测试 **141 项 OK（4 skip：2 个 Linux-only + Windows Pwn/XSS 用例）**；镜像内 Linux 全量测试 **141/141（3 skip）**，Pwn 与 XSS（Playwright admin bot）端到端在镜像内执行。包含契约/可靠性/靶题/HTTP 会话/MCP/skills/分类靶题/出题/参赛流程测试。模拟 HTTP 与 mock MCP 不是平台验证。
-- G3：**已运行**分类靶题假模型闭环：SQLi（Windows 3/3）、MCP/AI（Windows 3/3）、Pwn（镜像内 3/3）、XSS 反射+admin bot（镜像内 3/3）及原路径穿越（Windows/镜像 3/3），mock 平台均接受动态 flag；真实模型实验因无 `LLM_*` 凭据明确 `blocked`，**没有真实模型成功率，也没有真实 CTFy 平台接受记录**。
+- G2：Windows 全量测试 **144 项 OK（4 skip：2 个 Linux-only + Windows Pwn/XSS 用例）**；镜像内 Linux 全量测试 **144/144（3 skip）**，Pwn 与 XSS（Playwright admin bot）端到端在镜像内执行。包含契约/可靠性/靶题/HTTP 会话/MCP/skills/分类靶题/出题/参赛流程测试。模拟 HTTP 与 mock MCP 不是平台验证。
+- G3：**已运行**分类靶题假模型闭环：SQLi（Windows 3/3）、MCP/AI（Windows 3/3）、MCP `read_file` 工具目录穿越（Windows/镜像 3/3）、Pwn（镜像内 3/3）、XSS 反射+admin bot（镜像内 3/3）及原路径穿越（Windows/镜像 3/3），mock 平台均接受动态 flag；真实模型实验因无 `LLM_*` 凭据明确 `blocked`，**没有真实模型成功率，也没有真实 CTFy 平台接受记录**。
 - G4：出题包生成/审计/smoke 的本地证据仍在；`author/controller.py` 和 `scripts/platform_flow.py` 默认 dry-run、mock 契约测试通过；**未上传、未审核、未注册、未创建 entry**。
 - G5：固定 dev/validation 种子集与统一预算（60s / 8 turns / 8 requests）仍有效；新增分类 playbook/MCP/HTTP 会话，但真实模型对照仍未运行。
 - G6（新增）：镜像已装入 Web/Pwn/AI 工具链，WSL Docker 构建成功（3.57 GB 磁盘 / 0.88 GiB 内容），`ctfy agent check` 与 required 工具检查通过；**未上传/审核**。
@@ -51,7 +51,7 @@
 
 | 验证 | 实际结果 | 边界 |
 |---|---|---|
-| Windows `python -X utf8 -m unittest discover -s tests -v` | 当轮历史快照：24 项执行，22 通过、2 跳过（Linux 命令及其入口）；退出 0；最新全量为 141 项，见下节 | 含状态、假密钥、短预算、慢响应、请求上限、POST 不确定结果 |
+| Windows `python -X utf8 -m unittest discover -s tests -v` | 当轮历史快照：24 项执行，22 通过、2 跳过（Linux 命令及其入口）；退出 0；最新全量为 144 项，见下节 | 含状态、假密钥、短预算、慢响应、请求上限、POST 不确定结果 |
 | WSL `python3 -m unittest discover -s tests -v` | 24/24 通过，退出 0 | Linux 进程组、命令输出上限和模拟 HTTP 闭环已执行；仍不等于真实靶题解题 |
 | Windows `python -X utf8 scripts/run_local.py` | `dry_run`、`fully_solved:false`，退出 0 | 入口/文件契约检查 |
 | WSL `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` | 成功；本地 image ID `sha256:20e17c0933e13d3dc04d41599f22a56f433710e7b363b68507e8563f8371a3b3` | 构建期下载 apt 软件包；评测期无需下载 |
@@ -81,14 +81,14 @@
 
 | 验证 | 实际结果 | 证据等级与边界 |
 |---|---|---|
-| Windows 全量测试 | `python -X utf8 -m unittest discover -s tests -v` → **Ran 141 tests, OK (skipped=4)** | 代码/契约/本地闭环；新增 59 项 skills/loop/HTTP/MCP + 15 项 SQLi/MCP/Pwn/XSS 分类靶题 |
-| 镜像内全量测试 | `docker run --rm --user root -v "$PWD:/repo" -w /repo --entrypoint python qutagent:dev -X utf8 -m unittest discover -s tests -v` → **Ran 141 tests, OK (skipped=3)** | Linux 镜像内执行，Pwn/XSS 端到端实际运行；仍不是平台/真实模型验证 |
+| Windows 全量测试 | `python -X utf8 -m unittest discover -s tests -v` → **Ran 144 tests, OK (skipped=4)** | 代码/契约/本地闭环；新增 59 项 skills/loop/HTTP/MCP + 18 项 SQLi/MCP/Pwn/XSS/MCP 文件穿越分类靶题 |
+| 镜像内全量测试 | `docker run --rm --user root -v "$PWD:/repo" -w /repo --entrypoint python qutagent:dev -X utf8 -m unittest discover -s tests -v` → **Ran 144 tests, OK (skipped=3)** | Linux 镜像内执行，Pwn/XSS 端到端实际运行；仍不是平台/真实模型验证 |
 | 镜像工具链构建 | `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` → 成功，完整 **1078 s** + `ctf-browse`/skills 增量重建，镜像 `sha256:2e1060c9…`，内容 `943,208,224` B ≈ 0.88 GiB，磁盘 3.57 GB | 构建期联网安装；评测期离线 |
 | 工具链 required 检查 | `docker run --rm --entrypoint python qutagent:dev /app/scripts/check_toolchain.py` → exit 0，`verdict: passed`，**required_failed: []**，`optional_failed: ["import:angr"]` | 66 项检查；angr 为已知 optional 缺失 |
 | 离线检查 | 同上加 `--network none` → exit 0 / passed | 运行期工具链不依赖网络 |
 | 官方本地镜像检查 | `ctfy agent check qutagent:dev --json` → `verdict: passed`、`ran_locally: true`、`findings: []` | CTFY-0001 本地 dry run；不是平台审核 |
 | 镜像级假模型靶题 | 镜像内 `python -X utf8 scripts/run_lab.py --model fake --set dev` → 3/3，`fake-dev-20261025T101014Z-9cbe02`，wall 7.172s，平台接受 3 个动态 flag | 证明镜像内 agent/HTTP/模型/平台链路可运行；假模型不代表真实模型能力 |
-| 分类靶题（SQLi/MCP/Pwn/XSS） | SQLi Windows `fake-web-sqli-20261025T111527Z-4abad1` 3/3；MCP Windows `fake-ai-mcp-20261025T111533Z-d458f8` 3/3；Pwn 镜像内 `fake-pwn-20261025T111942Z-cb82ba` 3/3，wall 12.367s、平台接受 3；XSS 镜像内 `fake-xss-20261025T114243Z-4e26a9` 3/3，wall 29.545s、平台接受 3 | 证明分类 playbook、HttpSession Cookie/重定向、MCP action、Pwn 附件下载/工具链/exploit、XSS 反射+Playwright admin bot+/collect 提交链路可运行；假模型不代表真实模型能力 |
+| 分类靶题（SQLi/MCP/Pwn/XSS/MCP 穿越） | SQLi Windows `fake-web-sqli-20261025T111527Z-4abad1` 3/3；MCP Windows `fake-ai-mcp-20261025T111533Z-d458f8` 3/3；MCP `read_file` 穿越 Windows `fake-ai-mcp-traversal-20261025T115419Z-901ae1`、镜像 `fake-ai-mcp-traversal-20261025T115446Z-089539` 均 3/3；Pwn 镜像内 `fake-pwn-20261025T111942Z-cb82ba` 3/3；XSS 镜像内 `fake-xss-20261025T114243Z-4e26a9` 3/3 | 证明分类 playbook、HttpSession Cookie/重定向、MCP action（含工具参数穿越）、Pwn 附件下载/工具链/exploit、XSS 反射+Playwright admin bot+/collect 提交链路可运行；假模型不代表真实模型能力 |
 | 真实模型入口 | 仍无 `LLM_*`，`--model real` 返回 exit 2 / `blocked`；新增 `--llm-env-file` 便于在本地 gitignored 文件提供凭据（值不回显） | 无真实模型成功率；未伪造 |
 | 平台注册/出题上传 | 无 token；`platform_flow.py`/`author/controller.py` 仍只做 dry-run/mock | 未注册、未 probe、未 entry、未上传、未审核 |
 

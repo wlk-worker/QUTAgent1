@@ -486,5 +486,89 @@ class XssRunnerTests(unittest.TestCase):
         self.assertEqual(submit["answer"], flag)
 
 
+class McpTraversalTargetTests(unittest.TestCase):
+    def setUp(self):
+        self.work = workspace_temp("test-mcp-traversal-")
+        self.processes = []
+
+    def tearDown(self):
+        for process, handle in reversed(self.processes):
+            stop_process(process)
+            handle.close()
+        cleanup_work(self.work)
+
+    def _target(self, seed=701):
+        process, handle, info = _start("labs.mcp_traversal_target", self.work,
+                                       "mcptrav", seed)
+        self.processes.append((process, handle))
+        return info
+
+    def test_read_file_normal_and_traversal_plus_denied_get_flag(self):
+        info = self._target(701)
+        self.assertEqual(info["category"], "ai")
+        self.assertIn("mcp", info["tags"])
+        self.assertIn("tool-traversal", info["tags"])
+        client = MCPClient(info["services"][0]["url"], allowed_origins=[info["origin"]],
+                           deadline=None)
+        self.assertTrue(client.initialize()["ok"])
+        listed = client.list_tools()
+        names = {tool["name"] for tool in listed["tools"]}
+        self.assertEqual(names, {"read_file", "get_flag"})
+        denied = client.call_tool("get_flag", {})
+        self.assertFalse(denied["ok"])
+        self.assertIn("direct flag access denied", json.dumps(denied["content"]))
+        self.assertIsNone(RAW_FLAG.search(json.dumps(denied)))
+        policy = client.call_tool("read_file", {"path": "policy.txt"})
+        self.assertTrue(policy["ok"])
+        self.assertIn("policy", policy["content"][0]["text"].lower())
+        read = client.call_tool("read_file", {"path": "../private/flag.txt"})
+        self.assertTrue(read["ok"])
+        text = read["content"][0]["text"]
+        flag = RAW_FLAG.search(text).group(0)
+        self.assertEqual(hashlib.sha256(flag.encode()).hexdigest(), info["flag_sha256"])
+
+    def test_read_file_rejects_absolute_and_root_escape_paths(self):
+        info = self._target(702)
+        client = MCPClient(info["services"][0]["url"], allowed_origins=[info["origin"]],
+                           deadline=None)
+        absolute = client.call_tool("read_file", {"path": "/etc/passwd"})
+        self.assertFalse(absolute["ok"])
+        self.assertIn("absolute_path_not_allowed", json.dumps(absolute["content"]))
+        escape = client.call_tool("read_file", {"path": "../../../../etc/passwd"})
+        self.assertFalse(escape["ok"])
+        self.assertIn("path_outside_deployment_root", json.dumps(escape["content"]))
+
+
+class McpTraversalRunnerTests(unittest.TestCase):
+    def setUp(self):
+        self.out = workspace_temp("test-mcp-traversal-runner-")
+
+    def tearDown(self):
+        cleanup_work(self.out)
+
+    def test_ai_mcp_traversal_runner_end_to_end(self):
+        experiment, code = run_experiment(
+            "fake", "ai-mcp-traversal", out_dir=self.out, seeds=[701], environ=CLEAN_ENV)
+        self.assertEqual(code, 0, json.dumps(experiment.get("summary"), ensure_ascii=False))
+        case = experiment["cases"][0]
+        self.assertTrue(case["success"])
+        self.assertTrue(case["platform_accepted_flag"])
+        self.assertEqual(case["category"], "ai")
+        self.assertIn("mcp", case["tags"])
+        self.assertIn("tool-traversal", case["tags"])
+        self.assertGreaterEqual(case["mcp_calls"], 3)
+        events = [json.loads(line) for line in
+                  (ROOT / case["evidence"]["events_jsonl"]).read_text().splitlines()
+                  if line.strip()]
+        actions = [entry["data"] for entry in events if entry["event"] == "action"]
+        self.assertTrue(any(action.get("action") == "mcp" for action in actions))
+        self.assertTrue(any(action.get("tool") == "read_file" for action in actions))
+        self.assertFalse(any(action.get("tool") == "get_flag" for action in actions))
+        target_log = (ROOT / case["evidence"]["target_requests"]).read_text()
+        self.assertIn("tools/list", target_log)
+        self.assertIn("tools/call", target_log)
+        _no_raw_flag(self, (ROOT / case["evidence"]["result_json"]).parent)
+
+
 if __name__ == "__main__":
     unittest.main()

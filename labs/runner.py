@@ -81,6 +81,18 @@ EXPERIMENTS = {
         "web_only": True,
         "description": "MCP/AI lab: fixed seeds, in-scope MCP server exposing read-only tools.",
     },
+    "ai-mcp-traversal": {
+        "kind": "ai-mcp-traversal",
+        "seeds": (701, 702, 703),
+        "timeout_s": 60,
+        "max_turns": 8,
+        "max_requests": 8,
+        "target_module": "labs.mcp_traversal_target",
+        "fake_model": "labs.fake_mcp_traversal_model",
+        "web_only": True,
+        "description": ("MCP AI lab: read_file tool argument traversal to a flag outside "
+                        "the notes directory (no direct get_flag access)."),
+    },
     "pwn": {
         "kind": "pwn",
         "seeds": (501, 502, 503),

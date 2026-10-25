@@ -22,7 +22,7 @@
 
 优先通过模块边界添加能力，保持 `agent/main.py` 的入口稳定。对尚未实现的 `run_mode` 明确返回不支持；不要在没有赛道规则时猜测赛时出题上传协议。新平台字段要写明对应的官网标准版本，保留可复现的模拟测试。
 
-队友复核顺序（Windows）：`python -X utf8 -m unittest discover -s tests -v`（141 项）→ `python -X utf8 scripts/run_local.py` → `python -X utf8 scripts/run_lab.py --model fake --set dev` → `python -X utf8 author/controller.py --seed 46 --dry-run`。Linux/Docker 可用时再加：`docker build --pull=false --platform linux/amd64 -t qutagent:dev .` → `docker run --rm --entrypoint python qutagent:dev /app/scripts/check_toolchain.py`（required 全过）→ `ctfy agent check qutagent:dev --json`；镜像内全量测试用 `docker run --rm --user root -v "$PWD:/repo" -w /repo --entrypoint python qutagent:dev -X utf8 -m unittest discover -s tests -v`（`--user root` 仅因 `/mnt/c` bind mount 对 UID 10001 不可写；生产镜像仍以 UID 10001 运行）。`agent/state.py` 新增平台状态映射时，应同时补误判完成的回归场景；`agent/platform.py` 新增 POST 时，应先设计响应不确定后的只读核对方法；`labs/` 的新用例必须保持“无凭据时 blocked、不伪造成功率”。
+队友复核顺序（Windows）：`python -X utf8 -m unittest discover -s tests -v`（144 项）→ `python -X utf8 scripts/run_local.py` → `python -X utf8 scripts/run_lab.py --model fake --set dev` → `python -X utf8 author/controller.py --seed 46 --dry-run`。Linux/Docker 可用时再加：`docker build --pull=false --platform linux/amd64 -t qutagent:dev .` → `docker run --rm --entrypoint python qutagent:dev /app/scripts/check_toolchain.py`（required 全过）→ `ctfy agent check qutagent:dev --json`；镜像内全量测试用 `docker run --rm --user root -v "$PWD:/repo" -w /repo --entrypoint python qutagent:dev -X utf8 -m unittest discover -s tests -v`（`--user root` 仅因 `/mnt/c` bind mount 对 UID 10001 不可写；生产镜像仍以 UID 10001 运行）。`agent/state.py` 新增平台状态映射时，应同时补误判完成的回归场景；`agent/platform.py` 新增 POST 时，应先设计响应不确定后的只读核对方法；`labs/` 的新用例必须保持“无凭据时 blocked、不伪造成功率”。
 
 ## 当前适配层和待确认点
 

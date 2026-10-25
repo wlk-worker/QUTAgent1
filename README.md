@@ -1,6 +1,6 @@
 # QUTAgent：TPCTF 2026 / CTFy 原型
 
-这是 CTFY-0001 求解镜像、CTFY-0002 Web 出题包生成器、进程级 Web 靶题联调器与出题/参赛流程控制器的可用原型。**求解器已融合 SWE-agent v0.7、ctf-agent、Koshary、AWE、PwnAI 的分类 playbook/格式纠错/循环检测/历史压缩/HTTP 会话/MCP 能力；镜像已装入 Web/Pwn/AI 安全工具链（r2、pwntools、gdb、one_gadget、seccomp-tools、sqlmap、ffuf、nuclei、Chromium 等），WSL Docker 构建 3.57 GB（内容 0.88 GiB），`ctfy agent check` 与 required 工具检查均通过，镜像内 141 项测试通过；SQLi/MCP/Pwn/XSS 分类靶题假模型闭环（SQLi/MCP Windows 3/3，Pwn/XSS 镜像内 3/3）。真实模型实验因无凭据仍 `blocked`；尚无真实平台解题成绩、镜像审核、题包审核或平台接受记录。**规则与未确认事项见 [规则审计](docs/rules-audit.md) 和 [规则询问清单](docs/rules-request.md)，求解器能力映射见 [solver skills](docs/solver-skills.md)，工具链见 [toolchain](docs/toolchain.md)，实测证据见 [验证记录](docs/verification.md) 和 [靶题实验记录](docs/lab-experiments.md)。
+这是 CTFY-0001 求解镜像、CTFY-0002 Web 出题包生成器、进程级 Web 靶题联调器与出题/参赛流程控制器的可用原型。**求解器已融合 SWE-agent v0.7、ctf-agent、Koshary、AWE、PwnAI 的分类 playbook/格式纠错/循环检测/历史压缩/HTTP 会话/MCP 能力；镜像已装入 Web/Pwn/AI 安全工具链（r2、pwntools、gdb、one_gadget、seccomp-tools、sqlmap、ffuf、nuclei、Chromium 等），WSL Docker 构建 3.57 GB（内容 0.88 GiB），`ctfy agent check` 与 required 工具检查均通过，镜像内 144 项测试通过；SQLi/XSS/Pwn/AI-MCP（含 `read_file` 工具目录穿越）分类靶题假模型闭环（SQLi/MCP Windows 3/3，MCP 穿越 Windows/镜像 3/3，Pwn/XSS 镜像内 3/3）。真实模型实验因无凭据仍 `blocked`；尚无真实平台解题成绩、镜像审核、题包审核或平台接受记录。**规则与未确认事项见 [规则审计](docs/rules-audit.md) 和 [规则询问清单](docs/rules-request.md)，求解器能力映射见 [solver skills](docs/solver-skills.md)，工具链见 [toolchain](docs/toolchain.md)，实测证据见 [验证记录](docs/verification.md) 和 [靶题实验记录](docs/lab-experiments.md)。
 
 ## 最快本地启动
 
@@ -22,7 +22,7 @@ python scripts/run_local.py
 - `author/controller.py`：赛时出题流程（生成/复用 → 本地检查 → 确定性打包 → 可选上传 → 只读轮询）；默认 dry-run。
 - `scripts/run_lab.py`：固定 dev/validation 预算的完整靶题联调入口；`--llm-env-file` 可加载本地 LLM_* 文件（值不回显）。
 - `scripts/platform_flow.py`：镜像注册、probe、状态读取和独立 agent entry 的安全流程；默认 dry-run。
-- `tests/`：不接触真实平台的契约、靶题、抓取会话、MCP、出题/参赛流程测试（当前 141 项；Windows 4 项 skip，镜像内 3 项 skip）。
+- `tests/`：不接触真实平台的契约、靶题、抓取会话、MCP、出题/参赛流程测试（当前 144 项；Windows 4 项 skip，镜像内 3 项 skip）。
 - `examples/dry-run/`、`scripts/run_local.py`：无需凭据的本地入口检查。
 - `scripts/check_web_tools.py`、`scripts/check_toolchain.py`：镜像内基础 Web 工具/完整工具链检查。
 - `_research/ctfy/`、`_research/repos/`：公开标准与参考项目快照，不是运行代码，也不是权威实时规则。
@@ -36,7 +36,7 @@ python scripts/run_local.py
 Windows（当前开发机）：
 
 ```powershell
-python -X utf8 -m unittest discover -s tests -v          # 141 项，OK (skipped=4)
+python -X utf8 -m unittest discover -s tests -v          # 144 项，OK (skipped=4)
 python -X utf8 scripts/run_local.py                      # 入口/dry-run 契约
 python -X utf8 scripts/run_lab.py --model fake --set dev # 靶题 + 假模型 3/3
 python -X utf8 scripts/run_lab.py --model real --set validation  # 无 LLM_* 时 blocked，不伪造
@@ -106,7 +106,7 @@ python3 author/prepare.py --smoke-runs 2
 
 Linux shell 使用环境变量允许列表，只保留运行需要的 PATH、语言和临时目录等变量，不继承平台或模型密钥；超时和命令结束时清理该命令进程组，限制实际采集的 stdout/stderr 字节数。结果和事件记录会按已知密钥值脱敏。**环境过滤不是进程隔离**：同容器内的 `/proc`、共享文件和网络权限仍由运行环境决定，不能把此措施解释为密钥或目标范围的完整防护。HTTP 请求的总预算可令调用方及时返回；极慢的后台请求线程可能晚些才退出，故超时后的 POST 按“结果不确定”处理，不自动重试。正式使用前仍需授权靶题与比赛平台联调。
 
-镜像在构建期安装 Web/Pwn/AI 安全工具链（pwntools、gdb、r2、one_gadget、seccomp-tools、sqlmap、ffuf、nuclei、Chromium、mcp 等），版本清单保存在 `/app/tool-versions.txt`；评测期不下载软件。当前已有**镜像内** 141 项测试与 SQLi/MCP/Pwn/XSS 假模型分类靶题闭环（`labs/` 仍是进程级隔离，不是容器级），但真实模型解题实验因缺凭据仍为 `blocked`，平台注册/审核/接受答案仍未发生；这些能力与正式赛道细则仍是后续工作。
+镜像在构建期安装 Web/Pwn/AI 安全工具链（pwntools、gdb、r2、one_gadget、seccomp-tools、sqlmap、ffuf、nuclei、Chromium、mcp 等），版本清单保存在 `/app/tool-versions.txt`；评测期不下载软件。当前已有**镜像内** 144 项测试与 SQLi/XSS/Pwn/AI-MCP（含 read_file 工具穿越）假模型分类靶题闭环（`labs/` 仍是进程级隔离，不是容器级），但真实模型解题实验因缺凭据仍为 `blocked`，平台注册/审核/接受答案仍未发生；这些能力与正式赛道细则仍是后续工作。
 
 ## 评测约束
 
