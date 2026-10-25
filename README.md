@@ -1,6 +1,6 @@
 # QUTAgent：TPCTF 2026 / CTFy 原型
 
-这是 CTFY-0001 求解镜像、CTFY-0002 Web 出题包生成器、进程级 Web 靶题联调器与出题/参赛流程控制器的可用原型。**求解器已融合 SWE-agent v0.7、ctf-agent、Koshary、AWE、PwnAI 的分类 playbook/格式纠错/循环检测/历史压缩/HTTP 会话/MCP 能力；镜像已装入 Web/Pwn/AI 安全工具链（r2、pwntools、gdb、one_gadget、seccomp-tools、sqlmap、ffuf、nuclei、Chromium 等），WSL Docker 构建 3.57 GB（内容 0.88 GiB），`ctfy agent check` 与 required 工具检查均通过，镜像内 134 项测试通过；镜像级假模型靶题 3/3 闭环。真实模型实验因无凭据仍 `blocked`；尚无真实平台解题成绩、镜像审核、题包审核或平台接受记录。**规则与未确认事项见 [规则审计](docs/rules-audit.md) 和 [规则询问清单](docs/rules-request.md)，求解器能力映射见 [solver skills](docs/solver-skills.md)，工具链见 [toolchain](docs/toolchain.md)，实测证据见 [验证记录](docs/verification.md) 和 [靶题实验记录](docs/lab-experiments.md)。
+这是 CTFY-0001 求解镜像、CTFY-0002 Web 出题包生成器、进程级 Web 靶题联调器与出题/参赛流程控制器的可用原型。**求解器已融合 SWE-agent v0.7、ctf-agent、Koshary、AWE、PwnAI 的分类 playbook/格式纠错/循环检测/历史压缩/HTTP 会话/MCP 能力；镜像已装入 Web/Pwn/AI 安全工具链（r2、pwntools、gdb、one_gadget、seccomp-tools、sqlmap、ffuf、nuclei、Chromium 等），WSL Docker 构建 3.57 GB（内容 0.88 GiB），`ctfy agent check` 与 required 工具检查均通过，镜像内 134 项测试通过；SQLi/MCP/Pwn 分类靶题假模型闭环（SQLi/MCP Windows 3/3，Pwn 镜像内 3/3）。真实模型实验因无凭据仍 `blocked`；尚无真实平台解题成绩、镜像审核、题包审核或平台接受记录。**规则与未确认事项见 [规则审计](docs/rules-audit.md) 和 [规则询问清单](docs/rules-request.md)，求解器能力映射见 [solver skills](docs/solver-skills.md)，工具链见 [toolchain](docs/toolchain.md)，实测证据见 [验证记录](docs/verification.md) 和 [靶题实验记录](docs/lab-experiments.md)。
 
 ## 最快本地启动
 

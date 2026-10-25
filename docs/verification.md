@@ -92,4 +92,4 @@
 | 真实模型入口 | 仍无 `LLM_*`，`--model real` 返回 exit 2 / `blocked`；新增 `--llm-env-file` 便于在本地 gitignored 文件提供凭据（值不回显） | 无真实模型成功率；未伪造 |
 | 平台注册/出题上传 | 无 token；`platform_flow.py`/`author/controller.py` 仍只做 dry-run/mock | 未注册、未 probe、未 entry、未上传、未审核 |
 
-结论：镜像与求解器的**本地可用性**已显著增强（分类 playbook、格式纠错、循环检测、历史压缩、Cookie 会话、同源重定向、MCP、Pwn/Web/AI 工具链），并通过 required 检查与镜像内测试；但**真实模型解题、平台注册/审核、真实平台接受 flag、赛道规则附件**仍是未完成项。
+结论：镜像与求解器的**本地可用性**已显著增强（分类 playbook、格式纠错、循环检测、历史压缩、Cookie 会话、同源重定向、MCP、Pwn/Web/AI 工具链），并通过 required 检查与镜像内测试；SQLi/MCP/Pwn 分类靶题的假模型链路见 [分类靶题记录](labs-categories.md)。但**真实模型解题、平台注册/审核、真实平台接受 flag、赛道规则附件**仍是未完成项。
