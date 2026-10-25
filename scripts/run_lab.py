@@ -1,13 +1,17 @@
-"""Run the isolated Web-lab experiment.
+"""Run the isolated category-lab experiments.
 
 Examples (from the repository root, Windows or Linux):
 
-    python -X utf8 scripts/run_lab.py --model fake --set dev
-    python -X utf8 scripts/run_lab.py --model real --set validation
+    python -X utf8 scripts/run_lab.py --model fake --set dev          # Web traversal
+    python -X utf8 scripts/run_lab.py --model fake --set web-sqli     # SQL injection
+    python -X utf8 scripts/run_lab.py --model fake --set ai-mcp       # MCP / AI
+    python -X utf8 scripts/run_lab.py --model fake --set pwn          # Linux/WSL/image only
 
 ``--model real`` reads LLM_FLAVOR, LLM_MODEL, LLM_API_KEY and optionally
 LLM_BASE_URL from the environment. Missing credentials produce a machine-readable
-``blocked`` experiment (exit code 2), never a fabricated success rate.
+``blocked`` experiment (exit code 2), never a fabricated success rate. ``pwn``
+also returns a machine-readable ``blocked`` experiment when the host has no POSIX
+ELF runtime/gcc (for example native Windows), instead of pretending the case ran.
 """
 from __future__ import annotations
 
@@ -64,15 +68,21 @@ def _summary_view(experiment: dict) -> dict:
     for case in experiment.get("cases") or []:
         cases.append({
             "case_id": case.get("case_id"),
+            "kind": case.get("kind"),
+            "category": case.get("category"),
+            "tags": case.get("tags"),
             "success": case.get("success"),
             "stop_reason": case.get("stop_reason"),
             "platform_accepted_flag": case.get("platform_accepted_flag"),
             "submissions": case.get("submission_count"),
             "turns": case.get("turns"),
+            "http_calls": case.get("http_calls"),
+            "mcp_calls": case.get("mcp_calls"),
             "model_requests": case.get("model_requests"),
             "tokens": case.get("tokens"),
             "wall_seconds": case.get("wall_seconds"),
             "flag_sha256": case.get("flag_sha256"),
+            "downloaded_attachments": case.get("downloaded_attachments"),
             "evidence": case.get("evidence"),
             "error": case.get("error"),
         })
@@ -81,10 +91,12 @@ def _summary_view(experiment: dict) -> dict:
         "status": experiment.get("status"),
         "model": experiment.get("model"),
         "set": experiment.get("set"),
+        "kind": experiment.get("kind"),
         "seeds": experiment.get("seeds"),
         "budget": experiment.get("budget"),
         "summary": experiment.get("summary"),
         "blocked": experiment.get("blocked"),
+        "pwn_preflight": experiment.get("pwn_preflight"),
         "error": experiment.get("error"),
         "experiment_json": (experiment.get("evidence") or {}).get("experiment_json"),
         "cases": cases,
@@ -96,7 +108,7 @@ def main() -> int:
     parser.add_argument("--model", choices=["fake", "real"], default="fake",
                         help="fake: scripted local model; real: LLM_* provider (blocked if unset)")
     parser.add_argument("--set", dest="set_name", choices=sorted(EXPERIMENTS), default="dev",
-                        help="fixed seed set (dev or validation)")
+                        help="fixed seed set: " + ", ".join(sorted(EXPERIMENTS)))
     parser.add_argument("--out", default=str(ROOT / "artifacts" / "lab"),
                         help="evidence root (default: artifacts/lab, gitignored)")
     parser.add_argument("--seeds", default="", help="optional comma-separated seed override (debug only)")

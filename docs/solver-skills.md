@@ -95,7 +95,7 @@ python -X utf8 -m unittest discover -s tests -v
 python -X utf8 scripts/run_lab.py --model fake --set dev
 ```
 
-- 全量单元测试：126 个测试（原 67 + 新增 59），OK；仅保留既有 Linux-only skip（`test_integration` 入口测试、`test_reliability` shell 进程组测试）。
+- 全量单元测试：134 个测试（原 67 + 求解器/工具链 59 + 分类靶题 8），Windows OK（3 skip：2 个既有 Linux-only + Windows 下 Pwn Linux 用例）；镜像内 134/134（1 skip）。
 - `tests/test_skills.py`：分类、playbook 覆盖（Web 九类、Pwn 七步、AI/MCP、Misc/QA）、"playbook 不含硬编码 payload"、格式纠错/重试上限、循环警告与强制换策略、历史压缩保留 briefing/最近观测、提交语义不变。
 - `tests/test_web_tool.py`：Cookie 持久化、同源 1/2 跳重定向、跨域重定向拒绝且未发出请求、header allowlist/注入拒绝、平台/模型密钥头拒绝、响应截断与脱敏、超时、scope 刷新；并断言 `http_request` 仍不跟随重定向。
 - `tests/test_mcp.py`：本地 mock MCP 服务上的 initialize/session、JSON 与 SSE 两种传输、list/call、JSON-RPC error、origin 拒绝、重定向拒绝、响应过大、超时；loop 中 `mcp` 的 list→call→submit 闭环、越权 URL 拒绝、未知 op、无 scope 情况。

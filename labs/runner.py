@@ -12,9 +12,9 @@ the same Windows host and user. This is NOT Docker/VM/container isolation.
 """
 from __future__ import annotations
 
+import json
 import os
 import secrets
-import shutil
 import subprocess
 import sys
 import time
@@ -38,18 +38,59 @@ except ImportError:  # direct script execution
 
 EXPERIMENTS = {
     "dev": {
+        "kind": "web-traversal",
         "seeds": (101, 102, 103),
         "timeout_s": 60,
         "max_turns": 8,
         "max_requests": 8,
-        "description": "Development set: fixed seeds used while iterating on the lab.",
+        "target_module": "labs.target",
+        "fake_model": "labs.fake_model",
+        "web_only": True,
+        "description": "Development set: fixed seeds used while iterating on the Web traversal lab.",
     },
     "validation": {
+        "kind": "web-traversal",
         "seeds": (201, 202, 203),
         "timeout_s": 60,
         "max_turns": 8,
         "max_requests": 8,
-        "description": "Validation set: fixed seeds reserved for final measurements.",
+        "target_module": "labs.target",
+        "fake_model": "labs.fake_model",
+        "web_only": True,
+        "description": "Validation set: fixed seeds reserved for final Web traversal measurements.",
+    },
+    "web-sqli": {
+        "kind": "web-sqli",
+        "seeds": (301, 302, 303),
+        "timeout_s": 60,
+        "max_turns": 10,
+        "max_requests": 10,
+        "target_module": "labs.sqli_target",
+        "fake_model": "labs.fake_sqli_model",
+        "web_only": True,
+        "description": "SQL injection lab: fixed seeds, seed-specific login/search routes.",
+    },
+    "ai-mcp": {
+        "kind": "ai-mcp",
+        "seeds": (401, 402, 403),
+        "timeout_s": 60,
+        "max_turns": 8,
+        "max_requests": 8,
+        "target_module": "labs.mcp_target",
+        "fake_model": "labs.fake_mcp_model",
+        "web_only": True,
+        "description": "MCP/AI lab: fixed seeds, in-scope MCP server exposing read-only tools.",
+    },
+    "pwn": {
+        "kind": "pwn",
+        "seeds": (501, 502, 503),
+        "timeout_s": 90,
+        "max_turns": 12,
+        "max_requests": 12,
+        "target_module": "labs.pwn_target",
+        "fake_model": "labs.fake_pwn_model",
+        "web_only": False,
+        "description": "Linux amd64 ret2win lab: requires a POSIX host with gcc (image/WSL).",
     },
 }
 
@@ -127,7 +168,8 @@ def _task_payload(challenge_id: str, origin: str, budget: dict) -> dict:
 
 def _agent_environment(work_dir: Path, platform_origin: str, token: str, *,
                        model_mode: str, model_flavor: str, model_base_url: str,
-                       model_name: str, model_key: str, budget: dict) -> dict:
+                       model_name: str, model_key: str, budget: dict,
+                       web_only: bool = True) -> dict:
     env = child_environment({
         "CTFY_WORK_DIR": str(work_dir),
         "CTFY_PLATFORM_URL": platform_origin,
@@ -137,7 +179,7 @@ def _agent_environment(work_dir: Path, platform_origin: str, token: str, *,
         "LLM_FLAVOR": model_flavor,
         "LLM_MODEL": model_name,
         "LLM_API_KEY": model_key,
-        "QUT_WEB_ONLY": "1",
+        "QUT_WEB_ONLY": "1" if web_only else "0",
         "QUT_RUN_TIMEOUT_S": str(budget["timeout_s"]),
         "QUT_MODEL_MAX_REQUESTS": str(budget["max_requests"]),
         "CTFY_EVAL_MAX_TURNS": str(budget["max_turns"]),
@@ -339,6 +381,226 @@ def run_case(set_name: str, seed: int, model: str, budget: dict, run_dir: Path,
     return case
 
 
+def _category_scope(services: list) -> list[str]:
+    scope = []
+    for service in services:
+        if not isinstance(service, dict):
+            continue
+        url = str(service.get("url") or "")
+        if url.startswith(("http://", "https://")):
+            scope.append(url)
+        elif service.get("host") and service.get("port") and str(
+                service.get("service_type") or "").lower() in {"http", "https", "mcp"}:
+            scope.append(f"http://{service['host']}:{service['port']}")
+    return scope
+
+
+def _category_task_payload(challenge_id: str, ready: dict, budget: dict) -> dict:
+    services = [item for item in ready.get("services") or [] if isinstance(item, dict)]
+    question = {"id": "flag", "prompt": ready.get("question_prompt")
+                or "Find the flag served by the challenge target."}
+    attachments = [item for item in ready.get("attachments") or [] if isinstance(item, dict)]
+    challenge = {
+        "id": challenge_id,
+        "name": ready.get("name") or "Lab challenge",
+        "description": ready.get("description") or "Authorized local lab challenge.",
+        "category": ready.get("category") or "misc",
+        "tags": ready.get("tags") or [],
+        "questions": [question],
+    }
+    return {
+        "schema_version": 2,
+        "run_mode": "instance",
+        "competition_id": "qutagent-local-lab",
+        "challenge": challenge,
+        "questions": [question],
+        "gated_questions": 0,
+        "scope": _category_scope(services),
+        "target_services": services,
+        "attachments": attachments,
+        "rules_of_engagement": [
+            "Authorized local lab only; use only the supplied services/scope.",
+            "Do not attempt to read the target's private files directly from the filesystem.",
+            "Submit only evidence-backed answers.",
+        ],
+        "max_turns": budget["max_turns"],
+        "limits": {"timeout_s": budget["timeout_s"]},
+    }
+
+
+def _pwn_preflight() -> dict:
+    try:
+        from .pwn_target import preflight
+    except ImportError:  # direct script execution
+        from pwn_target import preflight
+    return preflight()
+
+
+def run_category_case(set_name: str, seed: int, model: str, budget: dict, run_dir: Path,
+                      config: dict, *, credentials: dict | None = None,
+                      verbose: bool = False) -> dict:
+    """Run one SQLi/MCP/Pwn case through the real agent entrypoint."""
+    kind = config.get("kind") or set_name
+    case_id = f"{model}-{set_name}-{seed}"
+    case_dir = make_dir(run_dir / "cases" / f"{set_name}-{seed}")
+    work = workspace_temp(prefix=f"{set_name}-{seed}-")
+    started = time.monotonic()
+    case: dict = {
+        "case_id": case_id, "set": set_name, "seed": seed, "model": model,
+        "kind": kind, "category": None, "tags": [], "web_only": bool(config.get("web_only", True)),
+        "status": "error", "success": False, "stop_reason": None, "fully_solved": False,
+        "platform_accepted_flag": False, "submission_count": 0, "correct_submission_count": 0,
+        "turns": None, "tool_calls_made": None, "http_calls": None, "mcp_calls": None,
+        "model_requests": None, "tokens": {"input": 0, "output": 0},
+        "wall_seconds": 0.0, "agent_elapsed_s": None, "agent_returncode": None,
+        "agent_timed_out": False, "flag_sha256": None, "downloaded_attachments": [],
+        "evidence": {}, "error": None,
+    }
+    processes: list = []
+    flag: str | None = None
+    try:
+        target = _start_server(
+            config["target_module"],
+            ["--root", str(work / "target"),
+             "--log", str(case_dir / "target_requests.jsonl"), "--seed", str(seed)],
+            work=work, case_dir=case_dir, label="target", processes=processes)
+        case["category"] = target.get("category")
+        case["tags"] = target.get("tags") or []
+        challenge_id = f"lab-{kind}-{set_name}-{seed}"
+        flag = Path(target["flag_file"]).read_text(encoding="utf-8").strip()
+        case["flag_sha256"] = target.get("flag_sha256")
+        platform_token = secrets.token_urlsafe(18)
+        platform_args = [
+            "--challenge-id", challenge_id,
+            "--flag-file", target["flag_file"],
+            "--token", platform_token,
+            "--log", str(case_dir / "platform_requests.jsonl"),
+            "--submissions-log", str(case_dir / "submissions.jsonl"),
+            "--services-json", json.dumps(target.get("services") or [], ensure_ascii=False),
+            "--category", str(target.get("category") or "misc"),
+            "--tags", ",".join(str(tag) for tag in (target.get("tags") or [])),
+            "--name", str(target.get("name") or "Lab challenge"),
+            "--description", str(target.get("description") or "Authorized local lab challenge."),
+            "--question-prompt", str(target.get("question_prompt")
+                                      or "Find the flag served by the challenge target."),
+        ]
+        if target.get("attachments_dir"):
+            platform_args += ["--attachments-dir", str(target["attachments_dir"])]
+        platform = _start_server("labs.mock_platform", platform_args, work=work,
+                                 case_dir=case_dir, label="platform", processes=processes)
+
+        if model == "fake":
+            fake_model = _start_server(
+                config["fake_model"], ["--log", str(case_dir / "model_calls.jsonl")],
+                work=work, case_dir=case_dir, label="model", processes=processes)
+            model_base_url = fake_model["origin"] + "/v1"
+            model_name = fake_model["model"]
+            model_key = "fake-model-key"
+            model_flavor = "openai"
+        else:
+            credentials = credentials or {}
+            model_base_url = credentials.get("LLM_BASE_URL") or ""
+            model_name = credentials.get("LLM_MODEL") or ""
+            model_key = credentials.get("LLM_API_KEY") or ""
+            model_flavor = credentials.get("LLM_FLAVOR") or ""
+
+        solver_work = make_dir(work / "solver_work")
+        write_text(solver_work / "task.json",
+                   _json_dumps(_category_task_payload(challenge_id, target, budget)))
+        write_text(solver_work / "README.md", str(target.get("readme") or ""))
+        agent_env = _agent_environment(
+            solver_work, platform["origin"], platform_token,
+            model_mode=model, model_flavor=model_flavor, model_base_url=model_base_url,
+            model_name=model_name, model_key=model_key, budget=budget,
+            web_only=bool(config.get("web_only", True)))
+        agent = _run_agent(solver_work, agent_env, budget["timeout_s"])
+        case["agent_returncode"] = agent["returncode"]
+        case["agent_timed_out"] = agent["timed_out"]
+        case["agent_elapsed_s"] = agent["elapsed_s"]
+
+        result = read_json(solver_work / "result.json", {}) or {}
+        sanitize_copy(solver_work / "result.json", case_dir / "result.json", flag)
+        sanitize_copy(solver_work / "events.jsonl", case_dir / "events.jsonl", flag)
+        sanitize_copy(solver_work / "task.json", case_dir / "task.json", flag)
+        write_text(case_dir / "agent_stdout.txt", sanitize_text(agent["stdout"], flag))
+        write_text(case_dir / "agent_stderr.txt", sanitize_text(agent["stderr"], flag))
+        downloaded_dir = solver_work / "attachments"
+        if downloaded_dir.is_dir():
+            destination = make_dir(case_dir / "attachments")
+            for item in sorted(downloaded_dir.iterdir()):
+                if item.is_file():
+                    (destination / item.name).write_bytes(item.read_bytes())
+            case["downloaded_attachments"] = sorted(
+                item.name for item in destination.iterdir() if item.is_file())
+
+        submissions = read_jsonl(case_dir / "submissions.jsonl")
+        accepted = any(bool(item.get("correct")) for item in submissions)
+        correct_count = sum(1 for item in submissions if item.get("correct"))
+        model_calls = read_jsonl(case_dir / "model_calls.jsonl")
+        input_tokens = int(result.get("input_tokens") or 0)
+        output_tokens = int(result.get("output_tokens") or 0)
+        if not input_tokens and not output_tokens and model_calls:
+            input_tokens = sum(int(item.get("prompt_tokens") or 0) for item in model_calls)
+            output_tokens = sum(int(item.get("completion_tokens") or 0) for item in model_calls)
+        case.update({
+            "stop_reason": result.get("stop_reason"),
+            "fully_solved": result.get("fully_solved") is True,
+            "solved_questions": result.get("solved") or [],
+            "platform_accepted_flag": accepted,
+            "submission_count": len(submissions),
+            "correct_submission_count": correct_count,
+            "turns": result.get("turns"),
+            "tool_calls_made": result.get("tool_calls_made"),
+            "http_calls": result.get("http_calls"),
+            "mcp_calls": result.get("mcp_calls"),
+            "model_requests": result.get("model_requests")
+            if result.get("model_requests") is not None else len(model_calls),
+            "tokens": {"input": input_tokens, "output": output_tokens},
+            "question_states": result.get("question_states"),
+            "completion_basis": result.get("completion_basis"),
+        })
+        success = bool(accepted and result.get("fully_solved") is True
+                       and result.get("stop_reason") == "done" and not agent["timed_out"])
+        case["success"] = success
+        case["status"] = "success" if success else "failed"
+        if not success and not result:
+            case["error"] = "agent produced no result.json"
+        case["evidence"] = {
+            "task_json": relative_to_workspace(case_dir / "task.json"),
+            "result_json": relative_to_workspace(case_dir / "result.json"),
+            "events_jsonl": relative_to_workspace(case_dir / "events.jsonl"),
+            "submissions_jsonl": relative_to_workspace(case_dir / "submissions.jsonl"),
+            "platform_requests": relative_to_workspace(case_dir / "platform_requests.jsonl"),
+            "target_requests": relative_to_workspace(case_dir / "target_requests.jsonl"),
+            "model_calls": relative_to_workspace(case_dir / "model_calls.jsonl")
+            if (case_dir / "model_calls.jsonl").exists() else None,
+            "agent_stdout": relative_to_workspace(case_dir / "agent_stdout.txt"),
+            "agent_stderr": relative_to_workspace(case_dir / "agent_stderr.txt"),
+            "attachments": relative_to_workspace(case_dir / "attachments")
+            if (case_dir / "attachments").exists() else None,
+        }
+    except Exception as exc:  # one broken case must not abort the whole set
+        case["error"] = f"{type(exc).__name__}: {exc}"[:500]
+        case["status"] = "error"
+        case["success"] = False
+    finally:
+        for process, handle in reversed(processes):
+            stop_process(process)
+            try:
+                handle.close()
+            except OSError:
+                pass
+        case["wall_seconds"] = round(time.monotonic() - started, 3)
+        cleanup_work(work)
+        write_json(case_dir / "case.json", case)
+        if verbose:
+            outcome = "success" if case["success"] else case["status"]
+            print(f"[lab] {case_id}: {outcome} "
+                  f"(category={case['category']}, stop={case['stop_reason']}, "
+                  f"{case['wall_seconds']}s)", file=sys.stderr)
+    return case
+
+
 def _json_dumps(data) -> str:
     import json
     return json.dumps(data, ensure_ascii=False, indent=2)
@@ -362,14 +624,15 @@ def _summarize(cases: list[dict], wall_seconds: float) -> dict:
 
 
 def _base_experiment(experiment_id: str, model: str, set_name: str, seeds: list[int],
-                     budget: dict) -> dict:
+                     budget: dict, kind: str = "web-traversal") -> dict:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "experiment_id": experiment_id,
         "generated_at": now_iso(),
         "status": "running",
         "model": model,
         "set": set_name,
+        "kind": kind,
         "seeds": seeds,
         "budget": budget,
         "environment": {
@@ -403,6 +666,8 @@ def run_experiment(model: str, set_name: str, *, out_dir: Path | str | None = No
     if set_name not in EXPERIMENTS:
         raise ValueError(f"unknown set {set_name!r}; choose from {sorted(EXPERIMENTS)}")
     base = EXPERIMENTS[set_name]
+    config = base
+    kind = base.get("kind", "web-traversal")
     budget = {
         "timeout_s": float(timeout_s if timeout_s is not None else base["timeout_s"]),
         "max_turns": int(max_turns if max_turns is not None else base["max_turns"]),
@@ -414,7 +679,34 @@ def run_experiment(model: str, set_name: str, *, out_dir: Path | str | None = No
     experiment_id = f"{model}-{set_name}-{timestamp()}-{uuid.uuid4().hex[:6]}"
     run_dir = make_dir(out_root / "runs" / experiment_id)
     started = time.monotonic()
-    experiment = _base_experiment(experiment_id, model, set_name, seeds, budget)
+    experiment = _base_experiment(experiment_id, model, set_name, seeds, budget, kind=kind)
+
+    if kind == "pwn":
+        preflight = _pwn_preflight()
+        experiment["pwn_preflight"] = preflight
+        if not preflight["supported"]:
+            experiment.update({
+                "status": "blocked",
+                "blocked": {
+                    "reason": preflight["reason"],
+                    "note": "The Pwn lab needs a POSIX host with gcc and an ELF runtime "
+                            "(WSL or the qutagent:dev container). No Pwn result was produced "
+                            "on this host and nothing is faked; SQLi/MCP are unaffected.",
+                    "probes": preflight["probes"],
+                    "rerun": (f"docker run --rm -v \"$PWD:/repo\" -w /repo --entrypoint python "
+                              f"qutagent:dev -X utf8 scripts/run_lab.py --model {model} --set pwn"),
+                },
+                "cases": [],
+                "summary": _summarize([], time.monotonic() - started),
+            })
+            experiment["evidence"].update({
+                "run_dir": relative_to_workspace(run_dir),
+                "experiment_json": relative_to_workspace(run_dir / "experiment.json"),
+            })
+            write_json(run_dir / "experiment.json", experiment)
+            write_json(out_root / "experiment.json", experiment)
+            write_json(out_root / f"blocked-{model}-pwn.json", experiment)
+            return experiment, 2
 
     credentials: dict | None = None
     if model == "real":
@@ -445,8 +737,12 @@ def run_experiment(model: str, set_name: str, *, out_dir: Path | str | None = No
         for index, seed in enumerate(seeds, start=1):
             if verbose:
                 print(f"[lab] case {index}/{len(seeds)}: {model} {set_name} seed={seed}", file=sys.stderr)
-            case = run_case(set_name, seed, model, budget, run_dir,
-                            credentials=credentials, verbose=verbose)
+            if config.get("kind", "web-traversal") == "web-traversal":
+                case = run_case(set_name, seed, model, budget, run_dir,
+                                credentials=credentials, verbose=verbose)
+            else:
+                case = run_category_case(set_name, seed, model, budget, run_dir, config,
+                                         credentials=credentials, verbose=verbose)
             experiment["cases"].append(case)
             experiment["summary"] = _summarize(experiment["cases"], time.monotonic() - started)
             experiment["evidence"].update({
