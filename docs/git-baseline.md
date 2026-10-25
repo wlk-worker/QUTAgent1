@@ -1,6 +1,6 @@
 # 协作基线（Git / 环境 / 证据）
 
-更新：2026-10-23。基线提交：`bbde74a chore: establish local prototype baseline`；本轮功能提交：`255c262 feat: add isolated web lab, http tool, and authoring/participation flows`。
+更新：2026-10-25。基线提交：`bbde74a chore: establish local prototype baseline`；历史功能提交：`255c262 feat: add isolated web lab, http tool, and authoring/participation flows`；本轮融合提交：`d682dfb feat: integrate CTF agent skills, MCP and Web/Pwn/AI toolchain`。
 
 ## 1. 当前纳入版本控制的内容
 
@@ -43,11 +43,14 @@ Linux/WSL（有 Docker 时）：
 ```bash
 python3 -m unittest discover -s tests -v
 docker build --pull=false --platform linux/amd64 -t qutagent:dev .
+docker run --rm --entrypoint python qutagent:dev /app/scripts/check_toolchain.py
+docker run --rm --network none --entrypoint python qutagent:dev /app/scripts/check_toolchain.py --quiet
+docker run --rm -v "$PWD:/repo" -w /repo --entrypoint python qutagent:dev -X utf8 -m unittest discover -s tests -v
 ctfy agent check qutagent:dev --json
 bash scripts/verify_local.sh
 ```
 
-当前开发机的边界：WSL 命令返回 `E_ACCESSDENIED`，Windows 未安装 Docker；因此本机只能跑进程级 HTTP 靶题与假模型实验，**不能把 Windows 结果当作镜像/容器/真实平台证据**。镜像与容器复跑需在可用的 Linux/Docker 环境执行。
+当前开发机：Windows + WSL Ubuntu-24.04（Docker 29.1.3）；镜像已实际构建并通过 required 工具检查。`labs/` 靶题仍是进程级隔离，镜像级假模型实验已跑通；**真实模型/真实平台证据仍需凭据**。
 
 ## 3. 提交前检查（队友与 Lead 都适用）
 
