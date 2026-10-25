@@ -27,6 +27,7 @@ python scripts/run_local.py
 - `scripts/check_web_tools.py`、`scripts/check_toolchain.py`：镜像内基础 Web 工具/完整工具链检查。
 - `_research/ctfy/`、`_research/repos/`：公开标准与参考项目快照，不是运行代码，也不是权威实时规则。
 - `docs/solver-skills.md`、`docs/reference-projects.md`、`docs/toolchain.md`、`docs/lab-experiments.md`、`docs/authoring-upload.md`、`docs/participation-flow.md`：能力映射、参考项目来源、工具链和实测证据边界。
+- `docs/real-model-runbook.md`：真实模型实验的凭据、预算、判读和平台后续步骤。
 - `docs/rules-request.md`：可直接发给组委会的赛道规则询问清单。
 - `docs/git-baseline.md`：版本控制范围、凭据排除规则和复现命令。
 
