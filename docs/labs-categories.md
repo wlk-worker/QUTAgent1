@@ -210,12 +210,13 @@ python -X utf8 -m unittest discover -s tests -v
 
 - 隔离仍是**同主机独立子进程 + 127.0.0.1 临时端口 + 独立临时目录**，不是 Docker/容器级隔离；Pwn 的 socat/纯 Python TCP 桥同样只是本地进程。Pwn 在 `qutagent:dev` 镜像内运行，但 labs 靶题本身仍与 runner 同主机。
 - 假模型是脚本化的“链路验证器”，成功只证明 **模型 HTTP 协议 → agent 工具（http/mcp/shell/download）→ mock 平台提交** 的全链路在本地靶题上可运行，**不代表任何真实模型的解题能力**。
+- **真实 DeepSeek `deepseek-flash` 已在全部 7 个 set（validation/SQLi/XSS/Pwn/SSRF/AI-MCP/MCP 穿越）上各 3/3**，证据与用量见 [验证记录](verification.md)；调优中保留 SQLi 1/3→3/3、XSS 0/3→3/3 的失败记录。
 - mock 平台真实比较动态 flag 并记录 `correct=true`，但它是**本地合成平台**，不是真实 CTFy 平台接受，也不是比赛成绩。
 - SQLi/MCP 在 Windows 上真实运行；Pwn、XSS 在 `qutagent:dev` Linux 镜像内真实运行 3/3；Windows 原生无法执行 Linux ELF、无 Playwright 时，分别正确返回 `blocked`。
 - MCP `read_file` 在 Windows 与 `qutagent:dev` 镜像内都真实运行 3/3：`get_flag` 被明确拒绝，flag 只通过 `read_file` 的 `../private` tool 参数穿越读取；Windows 6.467 s / 镜像 8.693 s 的独立 run 均记录在证据表。
 - XSS 在镜像内 3/3 由真实 Playwright headless Chromium 完成：admin bot 访问反射页并在浏览器内执行 payload、把 Cookie 写回 `/collect`，平台据此判定 flag；Windows 原生无浏览器时 blocked，不伪造。
 - SSRF 在 Windows 与 `qutagent:dev` 镜像内都真实运行 3/3：edge 的弱 hostname denylist 被等价 loopback 变体 `[::1]` 绕过，内部 flag 服务同端口绑定 `127.0.0.1`/`::1` 且不在 platform services；代理仍限制 loopback、不跟随 redirect，未访问任意外部网络。
-- 未访问真实平台、未使用真实模型凭据、未提交 Git。真实模型入口仍沿用 `--model real`：缺 `LLM_*` 时 blocked，不伪造。
+- 未访问真实平台、未提交 Git；真实模型凭据只在本机 gitignored `artifacts/llm.env`，未写入仓库/文档/证据。真实模型入口仍沿用 `--model real`：缺 `LLM_*` 时 blocked，不伪造。
 
 ## 6. 证据文件
 

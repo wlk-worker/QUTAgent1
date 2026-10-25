@@ -32,9 +32,9 @@
 - G0：公开规则审计及未知项记录已完成；赛道附件仍未找到，已整理可直接发送的 [规则询问清单](rules-request.md)。
 - G1：本地构建、dry run 与官方 `agent check` 已通过。
 - G2：Windows 全量测试 **149 项 OK（4 skip：2 个 Linux-only + Windows Pwn/XSS 用例）**；镜像内 Linux 全量测试 **149/149（3 skip）**，Pwn 与 XSS（Playwright admin bot）端到端在镜像内执行。包含契约/可靠性/靶题/HTTP 会话/MCP/skills/分类靶题/出题/参赛流程测试。模拟 HTTP 与 mock MCP 不是平台验证。
-- G3：**已运行**分类靶题假模型闭环：SQLi（Windows 3/3）、MCP/AI（Windows 3/3）、MCP `read_file` 工具目录穿越（Windows/镜像 3/3）、SSRF 弱 denylist 绕过（Windows/镜像 3/3）、Pwn（镜像内 3/3）、XSS 反射+admin bot（镜像内 3/3）及原路径穿越（Windows/镜像 3/3），mock 平台均接受动态 flag；真实模型实验因无 `LLM_*` 凭据明确 `blocked`，**没有真实模型成功率，也没有真实 CTFy 平台接受记录**。
+- G3：**已运行**分类靶题假模型闭环：SQLi（Windows 3/3）、MCP/AI（Windows 3/3）、MCP `read_file` 工具目录穿越（Windows/镜像 3/3）、SSRF 弱 denylist 绕过（Windows/镜像 3/3）、Pwn（镜像内 3/3）、XSS 反射+admin bot（镜像内 3/3）及原路径穿越（Windows/镜像 3/3），mock 平台均接受动态 flag。**真实 DeepSeek `deepseek-flash` 也已在本地合成靶题上完成 7 个 set 全部 3/3**（validation/SQLi/XSS/Pwn/SSRF/AI-MCP/MCP 穿越）；证据见下节。边界：mock 平台不是真实 CTFy，**没有真实平台接受记录**。
 - G4：出题包生成/审计/smoke 的本地证据仍在；`author/controller.py` 和 `scripts/platform_flow.py` 默认 dry-run、mock 契约测试通过；**未上传、未审核、未注册、未创建 entry**。
-- G5：固定 dev/validation 种子集与统一预算（60s / 8 turns / 8 requests）仍有效；新增分类 playbook/MCP/HTTP 会话，但真实模型对照仍未运行。
+- G5：固定 dev/validation 种子集与预算仍有效；**真实 DeepSeek 对照已运行**（validation 3/3、SQLi 3/3、XSS 3/3、Pwn 3/3、SSRF 3/3、AI-MCP 3/3、MCP 穿越 3/3），预算在真实运行中为 180–300s / 10–16 turns / 10–16 requests。
 - G6（新增）：镜像已装入 Web/Pwn/AI 工具链，WSL Docker 构建成功（3.57 GB 磁盘 / 0.88 GiB 内容），`ctfy agent check` 与 required 工具检查通过；**未上传/审核**。
 
 一键重跑 Windows 本地验收：`python -X utf8 -m unittest discover -s tests -v` + `python -X utf8 scripts/run_lab.py --model fake --set dev`。Linux/Docker 可用时再跑 `bash scripts/verify_local.sh`（需要 `ctfy`、`ctfy-admin`、Docker 与 Compose 在 PATH 上）。
@@ -77,19 +77,37 @@
 
 ## 2026-10-25 求解器能力融合与工具链镜像复核
 
-本轮 WSL Ubuntu-24.04 恢复可用（Docker 29.1.3 / Compose v5.6.1），因此补做了镜像级验证；仍然没有真实模型凭据、没有真实平台请求。能力映射见 [solver skills](solver-skills.md)，工具链见 [toolchain](toolchain.md)。
+本轮 WSL Ubuntu-24.04 恢复可用（Docker 29.1.3 / Compose v5.6.1），因此补做了镜像级验证；随后用用户提供的 DeepSeek 凭据完成真实模型本地靶题验证（见下节），但**没有真实平台请求**。能力映射见 [solver skills](solver-skills.md)，工具链见 [toolchain](toolchain.md)。
 
 | 验证 | 实际结果 | 证据等级与边界 |
 |---|---|---|
 | Windows 全量测试 | `python -X utf8 -m unittest discover -s tests -v` → **Ran 149 tests, OK (skipped=4)** | 代码/契约/本地闭环；新增 61 项 skills/loop/HTTP/MCP（含 MCP auth header）+ 21 项 SQLi/MCP/Pwn/XSS/MCP 穿越/SSRF 分类靶题 |
 | 镜像内全量测试 | `docker run --rm --user root -v "$PWD:/repo" -w /repo --entrypoint python qutagent:dev -X utf8 -m unittest discover -s tests -v` → **Ran 149 tests, OK (skipped=3)** | Linux 镜像内执行，Pwn/XSS 端到端实际运行；仍不是平台/真实模型验证 |
-| 镜像工具链构建 | `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` → 成功，完整 **1078 s** + `ctf-browse`/skills/MCP auth 增量重建，镜像 `sha256:fb7596a2…`，内容 `943,210,322` B ≈ 0.88 GiB，磁盘 3.57 GB | 构建期联网安装；评测期离线 |
+| 镜像工具链构建 | `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` → 成功，完整 **1078 s** + `ctf-browse`/skills/MCP auth 增量重建，镜像 `sha256:aa6ff14e…`，内容 `943,213,746` B ≈ 0.88 GiB，磁盘 3.57 GB | 构建期联网安装；评测期离线 |
 | 工具链 required 检查 | `docker run --rm --entrypoint python qutagent:dev /app/scripts/check_toolchain.py` → exit 0，`verdict: passed`，**required_failed: []**，`optional_failed: ["import:angr"]` | 66 项检查；angr 为已知 optional 缺失 |
 | 离线检查 | 同上加 `--network none` → exit 0 / passed | 运行期工具链不依赖网络 |
 | 官方本地镜像检查 | `ctfy agent check qutagent:dev --json` → `verdict: passed`、`ran_locally: true`、`findings: []` | CTFY-0001 本地 dry run；不是平台审核 |
 | 镜像级假模型靶题 | 镜像内 `python -X utf8 scripts/run_lab.py --model fake --set dev` → 3/3，`fake-dev-20261025T101014Z-9cbe02`，wall 7.172s，平台接受 3 个动态 flag | 证明镜像内 agent/HTTP/模型/平台链路可运行；假模型不代表真实模型能力 |
 | 分类靶题（SQLi/MCP/Pwn/XSS/MCP 穿越/SSRF） | SQLi Windows `fake-web-sqli-20261025T111527Z-4abad1` 3/3；MCP Windows `fake-ai-mcp-20261025T111533Z-d458f8` 3/3；MCP `read_file` 穿越 Windows `fake-ai-mcp-traversal-20261025T115419Z-901ae1`、镜像 `fake-ai-mcp-traversal-20261025T115446Z-089539` 均 3/3；SSRF Windows `fake-ssrf-20261025T121525Z-e19f8e`、镜像 `fake-ssrf-20261025T121547Z-4c8f55` 均 3/3；Pwn 镜像内 `fake-pwn-20261025T111942Z-cb82ba` 3/3；XSS 镜像内 `fake-xss-20261025T114243Z-4e26a9` 3/3 | 证明分类 playbook、HttpSession Cookie/重定向、MCP action（含工具参数穿越/认证头）、SSRF denylist 绕过、Pwn 附件下载/工具链/exploit、XSS 反射+Playwright admin bot+/collect 提交链路可运行；假模型不代表真实模型能力 |
-| 真实模型入口 | 仍无 `LLM_*`，`--model real` 返回 exit 2 / `blocked`；新增 `--llm-env-file` 便于在本地 gitignored 文件提供凭据（值不回显） | 无真实模型成功率；未伪造 |
+| 真实模型（DeepSeek） | 用户提供 key 后，validation/SQLi/XSS/Pwn/SSRF/AI-MCP/MCP 穿越 **7 个 set 均 3/3**；凭据只在 gitignored `artifacts/llm.env`，未入库 | 真实模型 + 本地 mock 平台；不是真实 CTFy 成绩 |
 | 平台注册/出题上传 | 无 token；`platform_flow.py`/`author/controller.py` 仍只做 dry-run/mock | 未注册、未 probe、未 entry、未上传、未审核 |
 
-结论：镜像与求解器的**本地可用性**已显著增强（分类 playbook、格式纠错、循环检测、历史压缩、Cookie 会话、同源重定向、MCP、Pwn/Web/AI 工具链），并通过 required 检查与镜像内测试；SQLi/MCP/Pwn 分类靶题的假模型链路见 [分类靶题记录](labs-categories.md)。但**真实模型解题、平台注册/审核、真实平台接受 flag、赛道规则附件**仍是未完成项。
+### 真实模型（DeepSeek `deepseek-flash`）验证
+
+用户提供了 DeepSeek API 凭据；模型经 `https://api.deepseek.com/v1` 的 OpenAI 兼容接口调用（凭据只在本机 gitignored `artifacts/llm.env`，未写入仓库/文档/证据）。每个 set 都是真实模型 + 真实 `agent/main.py` + 本地靶题 + mock CTFy 判定；**不是真实 CTFy 平台**。
+
+| set | experiment_id | 结果 | wall | tokens in/out | model requests | 预算 |
+|---|---|---|---|---|---|---|
+| validation（路径穿越） | `real-validation-20261025T122621Z-a71aa6` | **3/3** | 26.016s | 40930/2007 | 16 | 180s / 10 / 10 |
+| web-sqli | `real-web-sqli-20261025T124259Z-ec18bc` | **3/3** | 50.847s | 119195/3757 | 32 | 240s / 16 / 16 |
+| web-ssrf | `real-ssrf-20261025T123345Z-1c7ab0` | **3/3** | 22.437s | 33907/1233 | 13 | 180s / 12 / 12 |
+| xss（镜像内 Playwright） | `real-xss-20261025T124051Z-e6a994` | **3/3** | 77.005s | 102210/3481 | 28 | 240s / 16 / 16 |
+| pwn（镜像内 ret2win） | `real-pwn-20261025T124212Z-5f7c9f` | **3/3** | 43.737s | 66457/2900 | 24 | 300s / 16 / 16 |
+| ai-mcp | `real-ai-mcp-20261025T123412Z-1f6e9a` | **3/3** | 21.421s | 28970/1212 | 13 | 180s / 12 / 12 |
+| ai-mcp-traversal | `real-ai-mcp-traversal-20261025T123435Z-9bcfb0` | **3/3** | 27.496s | 26718/2447 | 12 | 180s / 12 / 12 |
+
+真实模型调优过程（保留失败证据）：SQLi 首轮 1/3、二轮 2/3，原因是格式错误/模型把 reasoning 预算耗尽返回空 content、以及猜测列名；加入 **JSON 动作提取、2400 token 预算、空响应重试、SQLi schema 枚举提示** 后 3/3。XSS 首轮 0/3、二轮 2/3，加入“admin bot + collector 要外带 cookie，alert 不是证据”的提示后 3/3。失败 run 保留在 `artifacts/lab-real/runs/`，没有删除或改写。
+
+边界：mock 平台真实比较动态 flag，但**不是真实 CTFy**；没有平台注册/审核/entry，也没有真实平台成绩。
+
+结论：镜像与求解器的**本地可用性**已显著增强（分类 playbook、格式纠错、循环检测、历史压缩、Cookie 会话、同源重定向、MCP、Pwn/Web/AI 工具链），并通过 required 检查与镜像内测试；**真实 DeepSeek 在本地合成靶题上 7 个 set 全部 3/3**。但**真实平台注册/审核、真实平台接受 flag、赛道规则附件**仍是未完成项。

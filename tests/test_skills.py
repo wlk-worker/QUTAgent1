@@ -138,6 +138,12 @@ class ActionFormatTests(unittest.TestCase):
 
     def test_parse_action_strips_code_fences_and_rejects_bad_replies(self):
         self.assertEqual(parse_action('```json\n{"action":"refresh"}\n```')["action"], "refresh")
+        self.assertEqual(
+            parse_action('I will refresh now. {"action":"refresh"} done')["action"],
+            "refresh")
+        self.assertEqual(
+            parse_action('```json\n{"action":"finish","reason":"ok"}\n```\nNote: done')["action"],
+            "finish")
         for text in ("", "not json", "[1,2]", '{"action":"teleport"}', '{"no":"action"}'):
             with self.assertRaises(ValueError):
                 parse_action(text)

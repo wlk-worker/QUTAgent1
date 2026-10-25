@@ -67,6 +67,24 @@ tool to inspect the supplied target services and platform refresh/download actio
 """
 
 
+def _extract_action_object(text: str) -> dict[str, Any] | None:
+    """Find one valid JSON action object inside otherwise-noisy model text.
+
+    Reasoning models occasionally wrap the JSON in a sentence or add a trailing
+    note. We still require an object with a known ``action``; malformed text,
+    arrays, unknown actions and non-JSON remain errors.
+    """
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", text):
+        try:
+            value, _ = decoder.raw_decode(text[match.start():])
+        except ValueError:
+            continue
+        if isinstance(value, dict) and value.get("action") in VALID_ACTIONS:
+            return value
+    return None
+
+
 def parse_action(text: str) -> dict[str, Any]:
     text = (text or "").strip()
     if text.startswith("```"):
@@ -75,8 +93,10 @@ def parse_action(text: str) -> dict[str, Any]:
         raise ValueError("empty model reply; expected one JSON action")
     try:
         action = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ValueError("model did not return one JSON object") from exc
+    except json.JSONDecodeError:
+        action = _extract_action_object(text)
+        if action is None:
+            raise ValueError("model did not return one JSON object") from None
     if not isinstance(action, dict):
         raise ValueError("model action must be a JSON object")
     kind = action.get("action")
@@ -345,7 +365,16 @@ def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Ca
             result["history_compressions"] += 1
             event("history_compressed", {"messages": len(history), "category": category})
             on_update(result)
-        content = model.complete(system_prompt, history)
+        # Reasoning models can consume a small token budget in hidden
+        # reasoning and return an empty content field. Keep enough headroom for
+        # one JSON action while still bounding generation per turn. Test/local
+        # model adapters that predate the keyword still work via the fallback.
+        try:
+            content = model.complete(system_prompt, history, max_tokens=2400)
+        except TypeError as exc:
+            if "max_tokens" not in str(exc):
+                raise
+            content = model.complete(system_prompt, history)
         result["turns"] = turn + 1
         history.append({"role": "assistant", "content": content[:6000]})
         try:

@@ -113,7 +113,7 @@ python -X utf8 scripts/run_lab.py --model fake --set dev
 
 ## 9. 剩余风险与后续
 
-1. 真实模型对更长分类 prompt 的遵循度与 token 成本需在授权真实模型上另行测量；当前无真实模型证据。
+1. 真实 DeepSeek `deepseek-flash` 已测 7 个 set 全部 3/3；仍需在真实平台模型/额度上复测，不能把本地 mock 结果当作平台成绩。
 2. 历史压缩摘要可能与"最近 12 条消息"边界交互（例如连续格式错误占满窗口），建议真实长局样本观察，必要时调 `HISTORY_KEEP_RECENT`。
 3. 同源重定向放宽可能影响依赖"绝对不跳转"的旧有假设；`http_request` 保持不跳转，只有 loop 的 `http` action 使用会话语义。
 4. MCP 兼容性（认证、SSE 断线重连、通知流）尚未覆盖；AI 题若使用 stdio 传输需另加适配层。

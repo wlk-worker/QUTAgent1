@@ -56,6 +56,22 @@ python -X utf8 scripts/run_lab.py --model real --set validation --llm-env-file a
 | `format_error_limit` | 模型不遵循 JSON action；检查 gateway 是否支持对应 wire protocol |
 | 真实模型成功了但 mock 平台没接受 | 看 `submissions.jsonl` 的 `correct`/`answer_sha256` 与 `target_requests.jsonl`；这通常是答案格式/上下文问题，不是平台 bug |
 
+## 4.1 已完成的真实模型结果（2026-10-25）
+
+模型：DeepSeek `deepseek-flash`（OpenAI 兼容接口）；凭据只在本机 gitignored `artifacts/llm.env`。
+
+| set | 结果 | wall | requests | 备注 |
+|---|---|---|---|---|
+| validation（路径穿越） | 3/3 | 26.0s | 16 | `real-validation-20261025T122621Z-a71aa6` |
+| web-sqli | 3/3 | 50.8s | 32 | `real-web-sqli-20261025T124259Z-ec18bc` |
+| web-ssrf | 3/3 | 22.4s | 13 | `real-ssrf-20261025T123345Z-1c7ab0` |
+| xss（镜像 Playwright） | 3/3 | 77.0s | 28 | `real-xss-20261025T124051Z-e6a994` |
+| pwn（镜像 ret2win） | 3/3 | 43.7s | 24 | `real-pwn-20261025T124212Z-5f7c9f` |
+| ai-mcp | 3/3 | 21.4s | 13 | `real-ai-mcp-20261025T123412Z-1f6e9a` |
+| ai-mcp-traversal | 3/3 | 27.5s | 12 | `real-ai-mcp-traversal-20261025T123435Z-9bcfb0` |
+
+真实模型也暴露过失败：SQLi 首轮 1/3、XSS 首轮 0/3；修复 JSON 动作提取/空响应重试/SQLi schema 提示/XSS 外带提示后达到上表。失败 run 保留在 `artifacts/lab-real/runs/`。**这些是本地 mock 平台结果，不是真实 CTFy 平台成绩。**
+
 ## 5. 之后的真实平台步骤（需要 token/规则）
 
 1. 用 `scripts/platform_flow.py register-harness` 注册 `qutagent:dev`（先 `--authorized`，token 从环境/本地文件读取）；

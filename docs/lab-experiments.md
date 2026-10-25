@@ -1,6 +1,6 @@
 # 隔离 Web 靶题实验记录
 
-记录日期：2026-10-23（北京时间）。本轮补的是 **G3/G5 的本地联调证据**：一个真实的授权 HTTP 靶题、真实 `agent/main.py` 调用链、mock CTFy 平台的真实 flag 判定、固定开发/验证集和真实模型入口。**没有真实比赛平台成绩，也没有真实模型成功率**；真实模型入口在本机无凭据时明确返回 `blocked`。
+记录日期：2026-10-23（北京时间），2026-10-25 补充真实模型结果。本轮补的是 **G3/G5 的本地联调证据**：一个真实的授权 HTTP 靶题、真实 `agent/main.py` 调用链、mock CTFy 平台的真实 flag 判定、固定开发/验证集和真实模型入口。**没有真实比赛平台成绩**；2026-10-25 用 DeepSeek `deepseek-flash` 在本地 validation/SQLi/XSS/Pwn/SSRF/AI-MCP/MCP 穿越 7 个 set 上均 3/3（见 §2），但仍不是真实 CTFy 平台接受。
 
 ## 证据等级
 
@@ -83,20 +83,26 @@ POST /api/v1/submissions                   200   # 平台判定 correct=true
 - `result.json` 关键字段：`stop_reason: done`、`fully_solved: true`、`solved: ["flag"]`、`http_calls: 4`、`model_requests: 5`
 - `submissions.jsonl` 每条只含 `answer_sha256`、`correct`、`challenge_fully_solved`，不含 flag 明文
 
-### 2. 真实模型入口（无凭据 → blocked，不伪造）
+### 2. 真实模型（DeepSeek `deepseek-flash`）—— 7 个 set 全部 3/3
 
-命令：
+用户提供 DeepSeek API 凭据后，使用本机 gitignored `artifacts/llm.env`（`--llm-env-file`，值不回显、不入库）：
 
 ```powershell
-python -X utf8 scripts/run_lab.py --model real --set validation
+python -X utf8 scripts/check_llm_env.py --env-file artifacts/llm.env
+python -X utf8 scripts/run_lab.py --model real --set validation --llm-env-file artifacts/llm.env
 ```
 
-结果：退出码 `2`，`status=blocked`，`blocked.reason=missing_credentials`，缺失 `LLM_FLAVOR`、`LLM_MODEL`、`LLM_API_KEY`；`cases=[]`，未发起任何模型请求。证据：
+| set | experiment_id | 结果 | wall | tokens in/out | requests |
+|---|---|---|---|---|---|
+| validation（路径穿越） | `real-validation-20261025T122621Z-a71aa6` | 3/3 | 26.016s | 40930/2007 | 16 |
+| web-sqli | `real-web-sqli-20261025T124259Z-ec18bc` | 3/3 | 50.847s | 119195/3757 | 32 |
+| web-ssrf | `real-ssrf-20261025T123345Z-1c7ab0` | 3/3 | 22.437s | 33907/1233 | 13 |
+| xss（镜像内） | `real-xss-20261025T124051Z-e6a994` | 3/3 | 77.005s | 102210/3481 | 28 |
+| pwn（镜像内） | `real-pwn-20261025T124212Z-5f7c9f` | 3/3 | 43.737s | 66457/2900 | 24 |
+| ai-mcp | `real-ai-mcp-20261025T123412Z-1f6e9a` | 3/3 | 21.421s | 28970/1212 | 13 |
+| ai-mcp-traversal | `real-ai-mcp-traversal-20261025T123435Z-9bcfb0` | 3/3 | 27.496s | 26718/2447 | 12 |
 
-- `artifacts/lab/blocked-real-validation.json`
-- `artifacts/lab/runs/real-validation-20261023T063907Z-3ff2ba/experiment.json`
-
-`--model real` 从环境变量读取 `LLM_FLAVOR/LLM_MODEL/LLM_API_KEY`（可选 `LLM_BASE_URL`），把 flavor **原样透传**给 `agent/model.py`（`openai` 或 `anthropic` 各自 wire protocol；已有回归测试 `test_real_model_flavor_is_forwarded_not_hardcoded`），预算仍固定为 `timeout 60s / 8 turns / 8 requests`；缺失凭据直接 blocked，不回退私有 key。使用正式授权凭据后，同一命令即真实运行并记录 usage；本轮**没有**该凭据，因此不存在真实模型成功率。
+真实模型调优保留失败记录：SQLi 1/3→2/3→3/3（格式错误/空响应/列名猜测），XSS 0/3→2/3→3/3（admin bot 外带 payload）；失败 run 在 `artifacts/lab-real/runs/`，未删除。**mock 平台不是真实 CTFy**，不能当作比赛成绩。此前“无凭据 → blocked”的历史记录仍保留在 `artifacts/lab/blocked-real-validation.json`，说明 fail-closed 行为没有被删除。
 
 ### 3. 测试
 

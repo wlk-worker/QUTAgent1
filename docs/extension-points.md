@@ -16,7 +16,7 @@
 | `agent/budget.py`、`agent/security.py`、`agent/tools.py` | 总预算、输出脱敏、命令执行/进程组清理、结构化 HTTP（origin 白名单/同源重定向/Cookie/截断） | 在 Linux 跑慢请求、假密钥、超时子进程和大输出测试；Windows 跑 `test_web_tool.py` |
 | `agent/skills.py`、`agent/mcp.py` | 分类 playbook/flag 纪律/格式与循环文本；MCP JSON-RPC HTTP/SSE 客户端 | `test_skills.py`、`test_mcp.py`；分类不得退化为硬编码 payload |
 | `toolbox/`、`scripts/check_toolchain.py`、`Dockerfile` | 镜像 Web/Pwn/AI 工具链、辅助命令、离线检查 | 镜像内 `check_toolchain.py` required 全过；`ctfy agent check`；`--network none` 复跑 |
-| `labs/`、`scripts/run_lab.py` | 进程级 Web 靶题、mock CTFy、假模型、固定 dev/validation 预算 | `python -X utf8 scripts/run_lab.py --model fake --set dev`；真实模型无凭据时只能 `blocked` |
+| `labs/`、`scripts/run_lab.py` | 进程级 Web/Pwn/AI 靶题、mock CTFy、假模型、固定预算 | `python -X utf8 scripts/run_lab.py --model fake --set dev`；真实模型 `--llm-env-file` 已在 7 个 set 跑 3/3，缺凭据时仍 `blocked` |
 | `author/controller.py` | 赛时出题流程：生成/复用、本地检查、确定性打包、可选上传、只读轮询 | `--dry-run` 零请求；mock 契约测试；未经授权不真实上传 |
 | `scripts/platform_flow.py` | 镜像注册、probe、状态、独立 entry；默认 dry-run | dry-run 零请求、fail-closed 预检、mock 契约测试；不能声称已注册/审核 |
 

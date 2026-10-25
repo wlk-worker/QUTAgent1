@@ -1,6 +1,6 @@
 # QUTAgent：TPCTF 2026 / CTFy 原型
 
-这是 CTFY-0001 求解镜像、CTFY-0002 Web 出题包生成器、进程级 Web 靶题联调器与出题/参赛流程控制器的可用原型。**求解器已融合 SWE-agent v0.7、ctf-agent、Koshary、AWE、PwnAI 的分类 playbook/格式纠错/循环检测/历史压缩/HTTP 会话/MCP 能力；镜像已装入 Web/Pwn/AI 安全工具链（r2、pwntools、gdb、one_gadget、seccomp-tools、sqlmap、ffuf、nuclei、Chromium 等），WSL Docker 构建 3.57 GB（内容 0.88 GiB），`ctfy agent check` 与 required 工具检查均通过，镜像内 149 项测试通过；SQLi/XSS/Pwn/AI-MCP（含 `read_file` 工具目录穿越）/SSRF 分类靶题假模型闭环（SQLi/MCP/SSRF Windows 3/3，MCP 穿越 Windows/镜像 3/3，Pwn/XSS 镜像内 3/3）。真实模型实验因无凭据仍 `blocked`；尚无真实平台解题成绩、镜像审核、题包审核或平台接受记录。**规则与未确认事项见 [规则审计](docs/rules-audit.md) 和 [规则询问清单](docs/rules-request.md)，求解器能力映射见 [solver skills](docs/solver-skills.md)，工具链见 [toolchain](docs/toolchain.md)，实测证据见 [验证记录](docs/verification.md) 和 [靶题实验记录](docs/lab-experiments.md)。
+这是 CTFY-0001 求解镜像、CTFY-0002 Web 出题包生成器、进程级 Web 靶题联调器与出题/参赛流程控制器的可用原型。**求解器已融合 SWE-agent v0.7、ctf-agent、Koshary、AWE、PwnAI 的分类 playbook/格式纠错/循环检测/历史压缩/HTTP 会话/MCP 能力；镜像已装入 Web/Pwn/AI 安全工具链（r2、pwntools、gdb、one_gadget、seccomp-tools、sqlmap、ffuf、nuclei、Chromium 等），WSL Docker 构建 3.57 GB（内容 0.88 GiB），`ctfy agent check` 与 required 工具检查均通过，镜像内 149 项测试通过；SQLi/XSS/Pwn/AI-MCP（含 `read_file` 工具目录穿越）/SSRF 分类靶题假模型闭环；**真实 DeepSeek（`deepseek-flash`）在本地合成靶题上 7 个 set 全部 3/3**（validation、SQLi、XSS、Pwn、SSRF、AI-MCP、MCP 工具穿越），真实用量/失败过程记录在 [验证记录](docs/verification.md)。尚无真实 CTFy 平台解题成绩、镜像审核、题包审核或平台接受记录。**规则与未确认事项见 [规则审计](docs/rules-audit.md) 和 [规则询问清单](docs/rules-request.md)，求解器能力映射见 [solver skills](docs/solver-skills.md)，工具链见 [toolchain](docs/toolchain.md)，实测证据见 [验证记录](docs/verification.md) 和 [靶题实验记录](docs/lab-experiments.md)。
 
 ## 最快本地启动
 
@@ -79,7 +79,7 @@ python3 author/prepare.py --smoke-runs 2
 
 ## 下一阶段
 
-1. **真实模型实验**：`scripts/run_lab.py --model real --set validation` 需要 `LLM_FLAVOR`、`LLM_MODEL`、`LLM_API_KEY`（可选 `LLM_BASE_URL`），也可用 `--llm-env-file artifacts/llm.env` 从 gitignored 本地文件加载；当前无凭据，故只有 `blocked` 记录，没有真实成功率。
+1. **真实模型实验（已完成）**：DeepSeek `deepseek-flash` 在 validation/SQLi/XSS/Pwn/SSRF/AI-MCP/MCP 穿越 7 个 set 上均 3/3；凭据只在本机 gitignored `artifacts/llm.env`。下一步是用真实平台模型/额度重复。
 2. **平台流程**：`scripts/platform_flow.py` 与 `author/controller.py` 默认 dry-run；真实镜像注册/probe/entry/题包上传需要账号 token、运营方审核与赛道规则授权，当前均未发生。
 3. **赛道规则**：附件仍未取得；按 [规则询问清单](docs/rules-request.md) 向组委会确认模型额度、运行限制、镜像截止、出题计分/窗口与 entry/奖项归属。
 4. **镜像固定**：当前基础镜像为浮动 `python:3.11-slim`，赛前建议按 digest 固定；真实模型/平台验证后再做最终重建。
@@ -107,7 +107,7 @@ python3 author/prepare.py --smoke-runs 2
 
 Linux shell 使用环境变量允许列表，只保留运行需要的 PATH、语言和临时目录等变量，不继承平台或模型密钥；超时和命令结束时清理该命令进程组，限制实际采集的 stdout/stderr 字节数。结果和事件记录会按已知密钥值脱敏。**环境过滤不是进程隔离**：同容器内的 `/proc`、共享文件和网络权限仍由运行环境决定，不能把此措施解释为密钥或目标范围的完整防护。HTTP 请求的总预算可令调用方及时返回；极慢的后台请求线程可能晚些才退出，故超时后的 POST 按“结果不确定”处理，不自动重试。正式使用前仍需授权靶题与比赛平台联调。
 
-镜像在构建期安装 Web/Pwn/AI 安全工具链（pwntools、gdb、r2、one_gadget、seccomp-tools、sqlmap、ffuf、nuclei、Chromium、mcp 等），版本清单保存在 `/app/tool-versions.txt`；评测期不下载软件。当前已有**镜像内** 149 项测试与 SQLi/XSS/Pwn/AI-MCP（含 read_file 工具穿越）/SSRF 假模型分类靶题闭环（`labs/` 仍是进程级隔离，不是容器级），但真实模型解题实验因缺凭据仍为 `blocked`，平台注册/审核/接受答案仍未发生；这些能力与正式赛道细则仍是后续工作。
+镜像在构建期安装 Web/Pwn/AI 安全工具链（pwntools、gdb、r2、one_gadget、seccomp-tools、sqlmap、ffuf、nuclei、Chromium、mcp 等），版本清单保存在 `/app/tool-versions.txt`；评测期不下载软件。当前已有**镜像内** 149 项测试与 SQLi/XSS/Pwn/AI-MCP（含 read_file 工具穿越）/SSRF 分类靶题闭环；**真实 DeepSeek `deepseek-flash` 在本地 validation/SQLi/XSS/Pwn/SSRF/AI-MCP/MCP 穿越 7 个 set 上均 3/3**（`labs/` 仍是进程级隔离，不是容器级；mock 平台不是真实 CTFy）。真实平台注册/审核/接受答案仍未发生；这些能力与正式赛道细则仍是后续工作。
 
 ## 评测约束
 

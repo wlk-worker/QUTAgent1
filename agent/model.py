@@ -48,18 +48,22 @@ class Model:
 
     def complete(self, system: str, messages: list[dict], max_tokens: int = 1200) -> str:
         if self.flavor == "openai":
-            payload = {"model": self.model, "messages": [{"role": "system", "content": system}, *messages], "max_tokens": max_tokens, "temperature": 0}
+            base_payload = {"model": self.model,
+                            "messages": [{"role": "system", "content": system}, *messages],
+                            "temperature": 0}
             headers = {"Authorization": "Bearer " + self.api_key}
         else:
-            payload = {"model": self.model, "system": system, "messages": messages, "max_tokens": max_tokens, "temperature": 0}
+            base_payload = {"model": self.model, "system": system,
+                            "messages": messages, "temperature": 0}
             headers = {"x-api-key": self.api_key, "anthropic-version": "2023-06-01"}
         headers["Content-Type"] = "application/json"
-        body = json.dumps(payload).encode("utf-8")
         for attempt in range(4):
             timeout = remaining(self.deadline, 90, self.clock)
             if self.requests >= self.max_requests:
                 raise ModelError("model_request_limit")
             self.requests += 1
+            payload = dict(base_payload, max_tokens=max_tokens)
+            body = json.dumps(payload).encode("utf-8")
             request = urllib.request.Request(self._endpoint(), data=body, headers=headers, method="POST")
             try:
                 def fetch():
@@ -79,6 +83,13 @@ class Model:
                 else:
                     content = "\n".join(str(p.get("text", "")) for p in data["content"] if p.get("type") == "text")
                 if not isinstance(content, str) or not content.strip():
+                    # Reasoning models can spend the whole completion budget on
+                    # hidden reasoning and return an empty content field. Retry
+                    # once or twice with more headroom instead of aborting the
+                    # whole task on a transient empty reply.
+                    if attempt < 3:
+                        max_tokens = min(6000, max(max_tokens * 2, 2400))
+                        continue
                     raise ModelError("empty model response")
                 return content
             except urllib.error.HTTPError as exc:
