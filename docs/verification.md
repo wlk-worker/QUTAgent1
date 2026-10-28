@@ -110,4 +110,17 @@
 
 边界：mock 平台真实比较动态 flag，但**不是真实 CTFy**；没有平台注册/审核/entry，也没有真实平台成绩。
 
-结论：镜像与求解器的**本地可用性**已显著增强（分类 playbook、格式纠错、循环检测、历史压缩、Cookie 会话、同源重定向、MCP、Pwn/Web/AI 工具链），并通过 required 检查与镜像内测试；**真实 DeepSeek 在本地合成靶题上 7 个 set 全部 3/3**。但**真实平台注册/审核、真实平台接受 flag、赛道规则附件**仍是未完成项。
+### 2026-10-28 CTFy 镜像上传
+
+在执行 `/evals/new?target=d35cc057773c44f79eec192b54551327` 的页面流程后：
+
+- `docker login registry.ctfy.io` 成功；
+- `docker push registry.ctfy.io/<namespace>/qutagent:v1` 成功，registry digest 为 `sha256:aa6ff14e…`；
+- 页面显示 **已注册为 qutagent**、**协议检查：看起来可以运行**；
+- 选择 **DeepSeek V4 Flash** 模型和 **DeepSeek** provider，保存 provider key 后进入第 3 步；
+- 页面显示 **开始已禁用：这个镜像尚未获批运行**，即**等待平台人工审核**；
+- 这是**个人测评**入口，页面明确与官方认证结果分层；不是正式比赛 entry/榜单。
+
+因此当前状态是：**镜像已上传并注册、协议检查通过，等待人工审核；尚未启动任何测评。** 官方规则附件/队伍审核仍待完成。
+
+结论：镜像与求解器的**本地可用性**已显著增强（分类 playbook、格式纠错、循环检测、历史压缩、Cookie 会话、同源重定向、MCP、Pwn/Web/AI 工具链），并通过 required 检查与镜像内测试；**真实 DeepSeek 在本地合成靶题上 7 个 set 全部 3/3**。CTFy 镜像已上传/注册，但**人工审核、正式平台 entry/成绩、赛道规则附件**仍未完成。

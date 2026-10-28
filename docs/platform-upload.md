@@ -77,9 +77,25 @@ https://ctfy.tsinghua.edu.cn/evals/new?target=d35cc057773c44f79eec192b54551327
 - `artifacts/` 是 gitignored；
 - 本地真实模型 key（`artifacts/llm.env`）与 CTFy token 是两套凭据，不能混用。
 
-## 6. 当前状态
+## 6. 当前状态（2026-10-28 实际执行）
 
-- 本地镜像已 tag 为 `registry.ctfy.io/<namespace>/qutagent:v1`；
-- 尚未 `docker login`/`docker push`，因为 `artifacts/ctfy.env` 的 `CTFY_TOKEN` 仍为空；
-- 平台 token 创建需要账号密码二次确认，不能替用户输入；
-- 填好 token 后运行 `scripts/push_image.sh`，再到网页填镜像地址即可。
+已完成：
+
+- `docker login registry.ctfy.io` 成功；
+- `docker push registry.ctfy.io/<namespace>/qutagent:v1` 成功；
+- 平台 registry digest：`sha256:aa6ff14e…`；
+- 在 `/evals/new?target=d35cc057773c44f79eec192b54551327` 填写镜像地址后，平台显示：
+  - **已注册为 qutagent**
+  - **协议检查：看起来可以运行**
+  - 页面进入第 2 步模型选择；
+- 模型选择 **DeepSeek V4 Flash**，provider 选择 **DeepSeek**，并保存了本地 DeepSeek provider key（仅本人平台连接）；
+- 页面进入第 3 步“开始”，显示 `开始已禁用：这个镜像尚未获批运行`。
+
+未完成/阻塞：
+
+- **镜像等待平台人工审核**；审核通过前“开始测评”保持禁用；
+- 还没有提交任何正式测评/比赛 entry，也没有官方成绩；
+- `/evals/new` 是**个人测评**，页面明确“与官方认证结果分层；受限样题运行不会进入官方榜单”；
+- 规则附件/队伍审核仍未完成。
+
+审核通过后，直接在同一页面点“开始测评”即可。若要正式参赛，还需要队伍审核与比赛 entry。
