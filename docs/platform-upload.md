@@ -132,7 +132,8 @@ localhost，因此在发出请求前就拒绝了。平台页面“检查密钥�
 
 - v5 推送 `qutagent:v5`，registry digest `sha256:6ea42fc6…`；
 - v6 推送 `qutagent:v6`，registry digest `sha256:6fed20eb…`；
-- 最终 v7 推送 `qutagent:v7`，registry digest `sha256:7ef94cc7…`；
+- v7 推送 `qutagent:v7`，registry digest `sha256:7ef94cc7…`；
+- 最终 v8 推送 `qutagent:v8`，registry digest `sha256:e857067d…`；
 - 40 题全量 CYBENCH 中大量“未调用到模型”的某条结果：
   `stop_reason=internal_error, error_code=RemoteDisconnected`，发生在
   `platform.challenge()` 之前，属于平台 API 连接被重置；旧 `Platform.request`
@@ -165,9 +166,18 @@ v7 修复：
 
 平台注册/试运行由用户执行。
 
+### v8：target/instance 等待也限时并回退
+
+- v8 在 v7 基础上，把 `start_instance`/`wait_instance` 的启动阶段等待限制为
+  **最多 45 秒**；超时或平台错误时，用 `task.json` 的 questions/target_services
+  构造最小 `info` 继续进入模型循环，并记录 `startup_fallback`；
+- 这样即使 target 状态接口持续失败，也不会把全部预算耗在模型之前；
+  工具访问 target 仍可能失败，但至少不会出现“0 调用直接 deadline”；
+- 最终镜像 `qutagent:v8`，registry digest `sha256:e857067d…`。
+
 ### 当前状态
 
-- 镜像 v7 已上传；平台注册/试运行由用户执行；v3 已自动准入并跑过 3 题试跑；
+- 镜像 v8 已上传；平台注册/试运行由用户执行；v3 已自动准入并跑过 3 题试跑；
 - 尚未拿到全量成绩；
 - `/evals/new` 是**个人测评**，页面明确与官方认证结果分层；
 - 正式比赛 entry、队伍审核、规则附件仍未完成。

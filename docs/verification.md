@@ -83,7 +83,7 @@
 |---|---|---|
 | Windows 全量测试 | `python -X utf8 -m unittest discover -s tests -v` → **Ran 153 tests, OK (skipped=4)** | 代码/契约/本地闭环；新增 64 项 skills/loop/HTTP/MCP（含 MCP auth header）+ 21 项 SQLi/MCP/Pwn/XSS/MCP 穿越/SSRF 分类靶题 |
 | 镜像内全量测试 | `docker run --rm --user root -v "$PWD:/repo" -w /repo --entrypoint python qutagent:dev -X utf8 -m unittest discover -s tests -v` → **Ran 153 tests, OK (skipped=3)** | Linux 镜像内执行，Pwn/XSS 端到端实际运行；仍不是平台/真实模型验证 |
-| 镜像工具链构建 | `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` → 成功，完整 **1078 s** + `ctf-browse`/skills/MCP auth 增量重建，镜像 `sha256:7ef94cc7…`，内容 `943,220,542` B ≈ 0.88 GiB，磁盘 3.57 GB | 构建期联网安装；评测期离线 |
+| 镜像工具链构建 | `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` → 成功，完整 **1078 s** + `ctf-browse`/skills/MCP auth 增量重建，镜像 `sha256:e857067d…`，内容 `943,222,259` B ≈ 0.88 GiB，磁盘 3.57 GB | 构建期联网安装；评测期离线 |
 | 工具链 required 检查 | `docker run --rm --entrypoint python qutagent:dev /app/scripts/check_toolchain.py` → exit 0，`verdict: passed`，**required_failed: []**，`optional_failed: ["import:angr"]` | 66 项检查；angr 为已知 optional 缺失 |
 | 离线检查 | 同上加 `--network none` → exit 0 / passed | 运行期工具链不依赖网络 |
 | 官方本地镜像检查 | `ctfy agent check qutagent:dev --json` → `verdict: passed`、`ran_locally: true`、`findings: []` | CTFY-0001 本地 dry run；不是平台审核 |
@@ -142,8 +142,10 @@
   证明卡在 `platform.challenge()`，不是 key/网关；
 - v7 把启动 `platform.challenge()` 限制为 12 秒/次、1 次重试；失败时回退到
   `task.json` 的 `challenge` 继续进入模型循环，并记录 `startup_fallback`；
-  已推送 `sha256:7ef94cc7…`，平台注册/试运行由用户执行；
+- v8 进一步把 `start_instance`/`wait_instance` 的启动等待限制为 45 秒；
+  超时后用 task.json 的 questions/target_services 构造最小 info，继续进入模型
+  循环；最终推送 `sha256:e857067d…`，平台注册/试运行由用户执行；
 - 这是**个人测评**入口，页面明确与官方认证结果分层；不是正式比赛 entry/榜单；
 - 正式平台 entry、队伍审核、规则附件仍未完成。
 
-结论：镜像与求解器的**本地可用性**已显著增强（分类 playbook、格式纠错、循环检测、历史压缩、Cookie 会话、同源重定向、MCP、Pwn/Web/AI 工具链），并通过 required 检查与镜像内测试；**真实 DeepSeek 在本地合成靶题上 7 个 set 全部 3/3**。CTFy 镜像已上传/注册/自动准入，v3 试跑已发生真实模型调用；v7 增加并发平台连接重试和启动阶段 task.json 回退，平台注册/试运行由用户执行；**试跑最终成绩、正式平台 entry/成绩、赛道规则附件**仍未完成。
+结论：镜像与求解器的**本地可用性**已显著增强（分类 playbook、格式纠错、循环检测、历史压缩、Cookie 会话、同源重定向、MCP、Pwn/Web/AI 工具链），并通过 required 检查与镜像内测试；**真实 DeepSeek 在本地合成靶题上 7 个 set 全部 3/3**。CTFy 镜像已上传/注册/自动准入，v3 试跑已发生真实模型调用；v8 增加并发平台连接重试、启动阶段 challenge/target 等待限时和 task.json 回退，平台注册/试运行由用户执行；**试跑最终成绩、正式平台 entry/成绩、赛道规则附件**仍未完成。

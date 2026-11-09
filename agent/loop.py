@@ -342,8 +342,30 @@ def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Ca
         return state
     if task.run_mode == "instance":
         existing = task.raw.get("target_instance")
-        instance_id = str(existing) if existing else platform.start_instance(task.challenge_id, task.competition_id)
-        info = platform.wait_instance(instance_id)
+        old_platform_deadline = getattr(platform, "deadline", None)
+        startup_deadline = min(deadline, time.monotonic() + 45)
+        try:
+            platform.deadline = (startup_deadline if old_platform_deadline is None
+                                 else min(old_platform_deadline, startup_deadline))
+            instance_id = (str(existing) if existing
+                           else platform.start_instance(task.challenge_id, task.competition_id))
+            info = platform.wait_instance(instance_id)
+        except (PlatformError, BudgetExpired) as exc:
+            if time.monotonic() >= deadline:
+                raise
+            instance_id = (str(existing) if existing
+                           else "fallback-" + str(task.challenge_id))
+            services = task.raw.get("target_services") or task.raw.get("services") or []
+            info = {
+                "id": instance_id,
+                "challenge": challenge,
+                "questions": task.raw.get("questions") or challenge.get("questions") or [],
+                "services": services,
+                "target_services": services,
+            }
+            result["startup_fallback"] = type(exc).__name__ + ":" + str(exc)[:80]
+        finally:
+            platform.deadline = old_platform_deadline
     elif task.run_mode != "qa":
         result["stop_reason"] = "unsupported_run_mode"
         on_update(result)
