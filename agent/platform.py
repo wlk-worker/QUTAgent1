@@ -1,7 +1,9 @@
 """Small REST projection of CTFY-0001. Request shapes follow ctfy 0.7.0 SDK."""
 from __future__ import annotations
 
+import http.client
 import json
+import ssl
 import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -111,11 +113,16 @@ class Platform:
                 if method != "GET":
                     raise PlatformError(0, "mutation_outcome_unknown") from None
                 raise
-            except (urllib.error.URLError, TimeoutError) as exc:
+            except (urllib.error.URLError, TimeoutError, ConnectionError,
+                    http.client.HTTPException, ssl.SSLError) as exc:
                 wait = min(2 ** attempt, 16)
+                # RemoteDisconnected is a ConnectionResetError, not a
+                # URLError: it used to escape as an uncaught internal_error
+                # before the model was ever called when many CYBENCH tasks
+                # started at once. Retry idempotent GETs with backoff.
                 # After an uncertain POST response, retrying could create a
                 # second instance or consume a second wrong-answer attempt.
-                if method == "GET" and attempt < 4 and self._can_wait(wait):
+                if method == "GET" and attempt < 6 and self._can_wait(wait):
                     attempt += 1
                     budget_wait(wait, self.deadline, self.sleep, self.clock)
                     continue
@@ -178,6 +185,13 @@ class Platform:
             status = exc.code
             exc.close()
             raise PlatformError(status, "attachment_error") from None
+        except BudgetExpired:
+            # BudgetExpired is a TimeoutError subclass; it must stay a
+            # deadline, not become an indistinguishable network error.
+            raise
+        except (urllib.error.URLError, TimeoutError, ConnectionError,
+                http.client.HTTPException, ssl.SSLError):
+            raise PlatformError(0, "network_error") from None
 
 
 def _retry_seconds(headers: Any, data: Any, attempt: int) -> float:

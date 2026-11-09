@@ -1,3 +1,4 @@
+import http.client
 import json
 import io
 import tempfile
@@ -172,6 +173,35 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(platform.challenge("C-1")["id"], "C-1")
         self.assertEqual(opener.calls, 2)
         self.assertEqual(waits, [2])
+
+    def test_get_retries_remote_disconnected(self):
+        class Response:
+            headers = {}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self, limit):
+                return b'{"id":"C-1"}'
+
+        class Opener:
+            calls = 0
+
+            def open(self, request, timeout):
+                self.calls += 1
+                if self.calls == 1:
+                    raise http.client.RemoteDisconnected("remote closed")
+                return Response()
+
+        opener = Opener()
+        waits = []
+        platform = Platform("https://platform.test", "test-token", opener=opener, sleep=waits.append)
+        self.assertEqual(platform.challenge("C-1")["id"], "C-1")
+        self.assertEqual(opener.calls, 2)
+        self.assertEqual(waits, [1])
 
     def test_rejected_capacity_post_can_retry(self):
         class Response:

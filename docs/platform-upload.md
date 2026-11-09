@@ -123,15 +123,29 @@ localhost，因此在发出请求前就拒绝了。平台页面“检查密钥�
 ### v4：修复 004 的 download 误用
 
 - 推送 `qutagent:v4`，registry digest `sha256:2e90dd5a…`；平台注册为
-  `qutagent-v4`，试运行进行中；
+  `qutagent-v4`；
 - `download` 失败不再终止整轮，而是返回 observation，提示 target 文件改用
   http/shell；工具说明也明确“download 只用于平台附件”；
-- 这是针对 CYBENCH-004 `platform_error` 的修复；v4 尚未跑出试跑结果。
+- 这是针对 CYBENCH-004 `platform_error` 的修复。
+
+### v5 / v6：修复并发下的 RemoteDisconnected
+
+- v5 推送 `qutagent:v5`，registry digest `sha256:6ea42fc6…`；
+- 最终 v6 推送 `qutagent:v6`，registry digest `sha256:6fed20eb…`（含 v5 全部修复
+  及最后的时间预算异常修正）；平台注册/试运行由用户执行；
+- 40 题全量 CYBENCH 中大量“未调用到模型”的某条结果：
+  `stop_reason=internal_error, error_code=RemoteDisconnected`，发生在
+  `platform.challenge()` 之前，属于平台 API 连接被重置；旧 `Platform.request`
+  只捕获 `URLError`/`TimeoutError`，没有捕获 `RemoteDisconnected`；
+- 修复：把 `RemoteDisconnected`/`ConnectionError`/`HTTPException`/`SSLError`
+  纳入 GET 的可重试网络错误，最多 6 次指数退避；POST 仍不自动重试，避免重复
+  创建实例/重复提交；附件下载网络错误转为 `PlatformError`，由 download 的
+  observation 路径恢复。
 
 ### 当前状态
 
-- 镜像 v4 已上传/注册；v3 已自动准入并跑过 3 题试跑；
-- 试跑仍在收尾，尚未拿到最终 3/3 成绩；
+- 镜像 v6 已上传；平台注册/试运行由用户执行；v3 已自动准入并跑过 3 题试跑；
+- 尚未拿到全量成绩；
 - `/evals/new` 是**个人测评**，页面明确与官方认证结果分层；
 - 正式比赛 entry、队伍审核、规则附件仍未完成。
 
