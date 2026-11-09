@@ -53,14 +53,19 @@ class Platform:
     def _can_wait(self, seconds: float) -> bool:
         return self.deadline is None or self.clock() + seconds + 5 < self.deadline
 
-    def request(self, method: str, path: str, payload: dict | None = None) -> Response:
+    def request(self, method: str, path: str, payload: dict | None = None, *,
+                timeout_ceiling: float | None = None,
+                max_retries: int | None = None) -> Response:
         if not path.startswith("/") or path.startswith("//"):
             raise ValueError("API path must be relative to /api/v1")
         url = self.base_url + path
         body = None if payload is None else json.dumps(payload).encode("utf-8")
+        retry_limit = 6 if max_retries is None else max(0, min(int(max_retries), 6))
         attempt = 0
         while True:
             timeout = remaining(self.deadline, 20, self.clock)
+            if timeout_ceiling is not None:
+                timeout = min(timeout, max(0.2, float(timeout_ceiling)))
             req = urllib.request.Request(url, data=body, method=method, headers={
                 "Authorization": "Bearer " + self.token,
                 "Content-Type": "application/json",
@@ -122,14 +127,18 @@ class Platform:
                 # started at once. Retry idempotent GETs with backoff.
                 # After an uncertain POST response, retrying could create a
                 # second instance or consume a second wrong-answer attempt.
-                if method == "GET" and attempt < 6 and self._can_wait(wait):
+                if method == "GET" and attempt < retry_limit and self._can_wait(wait):
                     attempt += 1
                     budget_wait(wait, self.deadline, self.sleep, self.clock)
                     continue
                 raise PlatformError(0, "network_error" if method == "GET" else "mutation_outcome_unknown") from None
 
-    def challenge(self, challenge_id: str) -> dict:
-        return self.request("GET", f"/challenges/{urllib.parse.quote(challenge_id, safe='')}").data
+    def challenge(self, challenge_id: str, *, timeout_ceiling: float | None = None,
+                  max_retries: int | None = None) -> dict:
+        return self.request(
+            "GET", f"/challenges/{urllib.parse.quote(challenge_id, safe='')}",
+            timeout_ceiling=timeout_ceiling, max_retries=max_retries,
+        ).data
 
     def start_instance(self, challenge_id: str, competition_id: str) -> str:
         data = self.request("POST", "/instances", {"challenge_id": challenge_id, "competition_id": competition_id}).data

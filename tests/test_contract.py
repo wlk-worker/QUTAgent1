@@ -258,6 +258,24 @@ class ContractTests(unittest.TestCase):
         with self.assertRaises(Paused):
             platform.challenge("C-1")
 
+    def test_challenge_failure_falls_back_to_task_briefing(self):
+        class FailingChallengePlatform(FakePlatform):
+            def challenge(self, challenge_id, **kwargs):
+                raise PlatformError(0, "network_error")
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            task = Task(root, {
+                "challenge": {"id": "C-1", "name": "Fallback", "description": "web"},
+                "questions": [{"id": "flag"}],
+            }, "", "C-1", "event", "instance", False)
+            model = FakeModel([{"action": "finish", "reason": "metadata unavailable"}])
+            result = run(task, FailingChallengePlatform(), model, max_turns=1,
+                         deadline=10**12, on_update=lambda value: None,
+                         command_tool=lambda command, cwd: {"exit_code": 0, "stdout": ""})
+            self.assertIn("startup_fallback", result)
+            self.assertEqual(result["turns"], 1)
+
     def test_instance_submission_unlocks_next_question(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

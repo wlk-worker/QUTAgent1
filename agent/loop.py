@@ -16,7 +16,7 @@ from typing import Any, Callable
 from . import skills
 from .state import assess
 from .security import scrub
-from .budget import remaining
+from .budget import BudgetExpired, remaining
 from .platform import PlatformError
 
 try:
@@ -298,7 +298,25 @@ def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Ca
                               "history_compressions": 0, "stop_reason": "running"}
     web_only = os.environ.get("QUT_WEB_ONLY") == "1"
     on_update(result)
-    challenge = platform.challenge(task.challenge_id)
+    try:
+        # Bound startup metadata separately from the task budget: a flaky
+        # platform connection must not consume the whole run before the model
+        # is ever called (observed as 0 model calls / deadline).
+        try:
+            challenge = platform.challenge(
+                task.challenge_id, timeout_ceiling=12, max_retries=1)
+        except TypeError:
+            # Test doubles and older platform adapters do not accept the
+            # bounded-startup keywords.
+            challenge = platform.challenge(task.challenge_id)
+    except (PlatformError, BudgetExpired) as exc:
+        if isinstance(exc, BudgetExpired) and time.monotonic() >= deadline:
+            raise
+        fallback = task.raw.get("challenge")
+        challenge = dict(fallback) if isinstance(fallback, dict) else {
+            "id": task.challenge_id, "name": task.challenge_id, "description": "",
+        }
+        result["startup_fallback"] = type(exc).__name__ + ":" + str(exc)[:80]
     category = skills.classify_task(task, challenge)
     result["category"] = category
     instance_id: str | None = None

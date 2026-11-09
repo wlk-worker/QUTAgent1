@@ -34,6 +34,6 @@
 
 ## 4. 证据与边界
 
-- 能力融合的证据：`python -X utf8 -m unittest discover -s tests -v` → 152 项 OK（Windows 4 skip）；镜像内同一套件 152/152（3 skip）；假模型靶题 3/3（Windows 与镜像内，含 SQLi/XSS/Pwn/SSRF/AI-MCP/MCP 工具穿越）。
+- 能力融合的证据：`python -X utf8 -m unittest discover -s tests -v` → 153 项 OK（Windows 4 skip）；镜像内同一套件 153/153（3 skip）；假模型靶题 3/3（Windows 与镜像内，含 SQLi/XSS/Pwn/SSRF/AI-MCP/MCP 工具穿越）。
 - 真实 DeepSeek `deepseek-flash` 已在本地 7 个 set 上各 3/3；这仍不是真实 CTFy 平台成绩，不能替代平台接受记录。
 - 任何第三方项目的安全工具只能在赛事明确授权的范围内使用；本仓库的 `labs/` 是合成靶题。

@@ -131,8 +131,8 @@ localhost，因此在发出请求前就拒绝了。平台页面“检查密钥�
 ### v5 / v6：修复并发下的 RemoteDisconnected
 
 - v5 推送 `qutagent:v5`，registry digest `sha256:6ea42fc6…`；
-- 最终 v6 推送 `qutagent:v6`，registry digest `sha256:6fed20eb…`（含 v5 全部修复
-  及最后的时间预算异常修正）；平台注册/试运行由用户执行；
+- v6 推送 `qutagent:v6`，registry digest `sha256:6fed20eb…`；
+- 最终 v7 推送 `qutagent:v7`，registry digest `sha256:7ef94cc7…`；
 - 40 题全量 CYBENCH 中大量“未调用到模型”的某条结果：
   `stop_reason=internal_error, error_code=RemoteDisconnected`，发生在
   `platform.challenge()` 之前，属于平台 API 连接被重置；旧 `Platform.request`
@@ -142,9 +142,32 @@ localhost，因此在发出请求前就拒绝了。平台页面“检查密钥�
   创建实例/重复提交；附件下载网络错误转为 `PlatformError`，由 download 的
   observation 路径恢复。
 
+### v7：启动阶段平台请求限时并回退到 task.json
+
+用户 v6 的 CYBENCH-001 实际日志是：
+
+```json
+{"stop_reason":"deadline","category":"","turns":0,
+ "model_hint":{"flavor":"openai","model":"deepseek-flash",
+               "base":"http://ctfy-llm-relay"}}
+```
+
+`category` 为空说明连 `platform.challenge()` 都没返回，就耗尽了 1:48；
+不是 key，也不是模型网关。v6 虽然会重试 `RemoteDisconnected`，但单次等待
+上限仍是整个任务预算，平台持续不可用时模型永远等不到。
+
+v7 修复：
+
+- `platform.challenge()` 启动元数据调用限制为 **12 秒/次、1 次重试**；
+- 仍失败时回退到 `/ctfy/work/task.json` 里的 `challenge`，继续进入模型循环，
+  并在结果里写 `startup_fallback`，不再出现“0 调用直到 deadline”；
+- 模型和工具调用继续受原任务总预算约束。
+
+平台注册/试运行由用户执行。
+
 ### 当前状态
 
-- 镜像 v6 已上传；平台注册/试运行由用户执行；v3 已自动准入并跑过 3 题试跑；
+- 镜像 v7 已上传；平台注册/试运行由用户执行；v3 已自动准入并跑过 3 题试跑；
 - 尚未拿到全量成绩；
 - `/evals/new` 是**个人测评**，页面明确与官方认证结果分层；
 - 正式比赛 entry、队伍审核、规则附件仍未完成。
