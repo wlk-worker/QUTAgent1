@@ -104,6 +104,16 @@ class ContractTests(unittest.TestCase):
         with self.assertRaises(ModelError):
             Model("openai", "test", "https://model.test/v1", "")
 
+    def test_internal_http_gateway_is_allowed(self):
+        # CTFY's evaluation network injects http://ctfy-llm-relay:8081.
+        model = Model("openai", "m", "http://ctfy-llm-relay:8081", "gateway-handle")
+        self.assertEqual(model.base_url, "http://ctfy-llm-relay:8081")
+
+    def test_public_http_gateway_is_rejected(self):
+        for url in ("http://model.example/v1", "http://8.8.8.8/v1"):
+            with self.assertRaises(ModelError):
+                Model("openai", "m", url, "gateway-handle")
+
     def test_model_uses_injected_gateway_and_key(self):
         class Response:
             def __enter__(self):

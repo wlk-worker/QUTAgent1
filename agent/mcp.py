@@ -154,7 +154,8 @@ class MCPClient:
             self.max_content_chars = max(128, min(int(max_content_chars), 200_000))
         except (TypeError, ValueError):
             raise ValueError("invalid_limits")
-        self.opener = opener or urllib.request.build_opener(_NoRedirect)
+        self.opener = opener or urllib.request.build_opener(
+            urllib.request.ProxyHandler({}), _NoRedirect)
         self.clock = clock
         self.environ = os.environ if environ is None else environ
         prepared, header_error = prepare_headers(headers, environ=self.environ)

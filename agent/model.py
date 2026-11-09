@@ -1,7 +1,9 @@
 """One model gateway per run; never falls back to a private credential."""
 from __future__ import annotations
 
+import ipaddress
 import json
+import os
 import time
 import urllib.error
 import urllib.parse
@@ -18,6 +20,31 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def _is_internal_gateway_host(hostname: str | None) -> bool:
+    """Whether an http:// gateway is a platform-internal service.
+
+    CTFY-0001 explicitly allows the platform to inject ``LLM_BASE_URL``; in
+    the evaluation network it is a Docker/Kubernetes service such as
+    ``http://ctfy-llm-relay:8081``, not a public HTTPS domain. The key is a
+    per-run gateway handle, and refusing http here made the platform see zero
+    model calls. Keep rejecting public plain-HTTP endpoints.
+    """
+    host = (hostname or "").strip().lower()
+    if not host:
+        return False
+    if host in {"localhost", "127.0.0.1", "::1"}:
+        return True
+    if "." not in host:  # Docker/Kubernetes service name, e.g. ctfy-llm-relay
+        return True
+    if host.endswith((".internal", ".local", ".docker", ".svc", ".cluster.local")):
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_private
+
+
 class Model:
     def __init__(self, flavor: str, model: str, base_url: str, api_key: str, *, opener=None, sleep=time.sleep,
                  deadline=None, max_requests=64, clock=time.monotonic):
@@ -28,11 +55,19 @@ class Model:
         if not model:
             raise ModelError("LLM_MODEL is empty")
         self.flavor, self.model, self.api_key = flavor, model, api_key
+        if not base_url:
+            native = "OPENAI_BASE_URL" if flavor == "openai" else "ANTHROPIC_BASE_URL"
+            base_url = os.environ.get(native, "")
         self.base_url = base_url or ("https://api.openai.com/v1" if flavor == "openai" else "https://api.anthropic.com/v1")
         parsed = urllib.parse.urlparse(self.base_url)
-        if parsed.scheme != "https" and parsed.hostname not in {"localhost", "127.0.0.1"}:
-            raise ModelError("model gateway must use HTTPS")
-        self.opener = opener or urllib.request.build_opener(_NoRedirect)
+        if parsed.scheme not in {"http", "https"}:
+            raise ModelError("model gateway must be HTTP(S)")
+        if parsed.scheme == "http" and not _is_internal_gateway_host(parsed.hostname):
+            raise ModelError("public model gateway must use HTTPS")
+        # The platform's model gateway is an internal service; environment
+        # HTTP(S)_PROXY settings in a foreign image must not intercept it.
+        self.opener = opener or urllib.request.build_opener(
+            urllib.request.ProxyHandler({}), _NoRedirect)
         self.sleep = sleep
         self.input_tokens = 0
         self.output_tokens = 0

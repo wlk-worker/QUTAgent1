@@ -9,7 +9,7 @@
 | 假模型 + mock 平台 + 本地靶题闭环（3/3） | HTTP 工具、`loop.py` 动作分发、`model.py` 的 OpenAI 兼容客户端、`platform.py` 的实例/提交路径整体可运行；mock 平台按动态 flag 真实判定 | 模型解题能力、真实 CTFy 平台会接受答案、真实比赛成绩 |
 | 本地靶题被路径穿越攻破 | 靶题实现与“编码后可绕过朴素前缀检查”的利用链符合设计 | 真实题目可解，或真实环境的隔离强度 |
 | `--model real` 返回 `blocked`（退出码 2） | 无凭据时不伪造结果、不读取私有 key、不发起模型请求 | 真实模型的任何成功率/用量 |
-| 149 项单元/集成测试通过 | Windows 与镜像内 Linux 的调用链与边界行为 | 官方镜像检查、平台审核或比赛接受 |
+| 151 项单元/集成测试通过 | Windows 与镜像内 Linux 的调用链与边界行为 | 官方镜像检查、平台审核或比赛接受 |
 
 ## 实验环境与隔离限制（重要）
 
@@ -110,7 +110,7 @@ python -X utf8 scripts/run_lab.py --model real --set validation --llm-env-file a
 python -X utf8 -m unittest discover -s tests -v
 ```
 
-结果：Windows `Ran 149 tests`、`OK (skipped=4)`；4 项 skip 为 2 个既有 Linux-only shell/进程组测试 + Windows 下 Pwn Linux 用例 + Windows 无 Playwright 的 XSS 用例。镜像内（`--user root`，bind mount 对 UID 10001 不可写）同一套件 **149/149 通过（skipped=3）**，包含 SQLi/MCP/Pwn/XSS 分类靶题。新增测试不使用持久凭据，也不访问真实平台；临时文件由测试/实验目录管理。
+结果：Windows `Ran 151 tests`、`OK (skipped=4)`；4 项 skip 为 2 个既有 Linux-only shell/进程组测试 + Windows 下 Pwn Linux 用例 + Windows 无 Playwright 的 XSS 用例。镜像内（`--user root`，bind mount 对 UID 10001 不可写）同一套件 **151/151 通过（skipped=3）**，包含 SQLi/MCP/Pwn/XSS 分类靶题。新增测试不使用持久凭据，也不访问真实平台；临时文件由测试/实验目录管理。
 
 ## 证据文件说明
 

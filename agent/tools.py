@@ -309,7 +309,8 @@ def http_request(method: str, url: str, *, allowed_origins, body=None, timeout_s
     safe_url = urllib.parse.urlunsplit(
         (parsed.scheme, parsed.netloc, parsed.path or "/", parsed.query, ""))
     request = urllib.request.Request(safe_url, data=payload, method=method, headers=headers)
-    client = opener or urllib.request.build_opener(_NoRedirect)
+    client = opener or urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), _NoRedirect)
 
     def fetch():
         with client.open(request, timeout=timeout) as response:
@@ -380,6 +381,7 @@ class HttpSession:
         self.environ = os.environ if environ is None else environ
         self.jar = http.cookiejar.CookieJar()
         self.opener = opener or urllib.request.build_opener(
+            urllib.request.ProxyHandler({}),
             urllib.request.HTTPCookieProcessor(self.jar), _NoRedirect)
 
     def set_allowed_origins(self, allowed_origins) -> None:

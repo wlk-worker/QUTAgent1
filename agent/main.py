@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from agent.contract import Task, write_result
 from agent.loop import run
 from agent.model import Model, ModelError
+from urllib.parse import urlsplit
 from agent.platform import Paused, Platform, PlatformError
 from agent.budget import BudgetExpired
 
@@ -41,6 +42,21 @@ def _working_time(budget: float) -> float:
     """Leave room for a final atomic result without exceeding a short task."""
     reserve = min(30.0, budget * 0.1)
     return max(0.001, budget - reserve)
+
+
+def _model_hint() -> dict:
+    """Diagnostic metadata without the key: flavor/model and gateway host."""
+    raw = os.environ.get("LLM_BASE_URL", "")
+    try:
+        parsed = urlsplit(raw)
+        base = f"{parsed.scheme}://{parsed.hostname}" if parsed.hostname else ""
+    except ValueError:
+        base = ""
+    return {
+        "flavor": os.environ.get("LLM_FLAVOR", "")[:40],
+        "model": os.environ.get("LLM_MODEL", "")[:100],
+        "base": base,
+    }
 
 
 def main() -> int:
@@ -80,6 +96,7 @@ def main() -> int:
                      on_update=save)
     except BudgetExpired:
         result["stop_reason"] = "deadline"
+        result["model_hint"] = _model_hint()
     except KeyboardInterrupt:
         result["stop_reason"] = "interrupted"
     except Paused:
@@ -90,6 +107,7 @@ def main() -> int:
     except ModelError as exc:
         result["stop_reason"] = "model_error"
         result["error_code"] = str(exc)[:100]
+        result["model_hint"] = _model_hint()
     except Exception as exc:
         # Failure class is useful for diagnosis; request bodies and secrets are not.
         result["stop_reason"] = "internal_error"

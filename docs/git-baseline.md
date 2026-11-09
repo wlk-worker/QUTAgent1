@@ -11,7 +11,7 @@
 - `author/__init__.py`、`author/generate.py`、`author/prepare.py`：离线 Web 候选题生成与本地验证。
 - `author/controller.py`：赛时出题流程（默认 dry-run，可选出题包上传 + 只读轮询）。
 - `toolbox/`：镜像内 `ctf-checksec`/`ctf-disasm`/`ctf-debug`/`ctf-strings`/`ctf-browse` 与 nuclei 起步模板。
-- `tests/`：契约、集成、可靠性、靶题、HTTP 会话、MCP、skills、出题/参赛流程测试（当前 149 项；Windows 4 项 skip，镜像内 3 项 skip）。
+- `tests/`：契约、集成、可靠性、靶题、HTTP 会话、MCP、skills、出题/参赛流程测试（当前 151 项；Windows 4 项 skip，镜像内 3 项 skip）。
 - `scripts/`：本地 dry run、镜像内 Web/工具链检查、一键验收、`run_lab.py`、`platform_flow.py`。
 - `examples/dry-run/`：无凭据的合成任务。
 - `docs/`：验证记录、规则审计/询问、登录后查阅、扩展入口、solver skills、参考项目、工具链、靶题实验、出题上传、参赛流程、协作基线。

@@ -77,25 +77,52 @@ https://ctfy.tsinghua.edu.cn/evals/new?target=d35cc057773c44f79eec192b54551327
 - `artifacts/` 是 gitignored；
 - 本地真实模型 key（`artifacts/llm.env`）与 CTFy token 是两套凭据，不能混用。
 
-## 6. 当前状态（2026-10-28 实际执行）
+## 6. 实际执行与故障定位（2026-10-28 / 2026-11-09）
 
-已完成：
+### v1：失败，根因是 agent 网关校验
 
-- `docker login registry.ctfy.io` 成功；
-- `docker push registry.ctfy.io/<namespace>/qutagent:v1` 成功；
-- 平台 registry digest：`sha256:aa6ff14e…`；
-- 在 `/evals/new?target=d35cc057773c44f79eec192b54551327` 填写镜像地址后，平台显示：
-  - **已注册为 qutagent**
-  - **协议检查：看起来可以运行**
-  - 页面进入第 2 步模型选择；
-- 模型选择 **DeepSeek V4 Flash**，provider 选择 **DeepSeek**，并保存了本地 DeepSeek provider key（仅本人平台连接）；
-- 页面进入第 3 步“开始”，显示 `开始已禁用：这个镜像尚未获批运行`。
+- 推送 `qutagent:v1`，平台注册为 `qutagent`；
+- 协议检查通过，人工审核后启动；
+- 运行结果：`stop_reason=model_error`，平台显示 **已转发的模型调用 0**；
+- `work/result.json` 的实际错误：
 
-未完成/阻塞：
+```json
+{"schema_version":2,"stop_reason":"model_error","answers":{},"solved":[],
+ "fully_solved":false,"error_code":"model gateway must use HTTPS"}
+```
 
-- **镜像等待平台人工审核**；审核通过前“开始测评”保持禁用；
-- 还没有提交任何正式测评/比赛 entry，也没有官方成绩；
-- `/evals/new` 是**个人测评**，页面明确“与官方认证结果分层；受限样题运行不会进入官方榜单”；
-- 规则附件/队伍审核仍未完成。
+**不是 DeepSeek key 失效**。平台给 agent 注入的是内网 HTTP 网关
+`http://ctfy-llm-relay:8081`，而 `agent/model.py` 当时只允许 HTTPS 或
+localhost，因此在发出请求前就拒绝了。平台页面“检查密钥”的提示会误导。
 
-审核通过后，直接在同一页面点“开始测评”即可。若要正式参赛，还需要队伍审核与比赛 entry。
+### v2：允许内网 HTTP，但仍无模型调用
+
+- 修复为允许内网服务名/私网 HTTP 网关；
+- 推送 `qutagent:v2`，平台自动准入；
+- 但试跑仍显示 **未调用到模型 3**，任务 `stop_reason=deadline`；
+- 进一步判断：容器继承了不可用的 `HTTP_PROXY`/`HTTPS_PROXY`，`urllib`
+  通过代理访问内网网关时挂起直到 deadline。v2 仍未真正发出可观测的模型请求。
+
+### v3：禁用代理并补充 native base URL，模型调用已发生
+
+- 推送 `qutagent:v3`，registry digest `sha256:9e362a97…`；
+- `agent/model.py`/`agent/tools.py`/`agent/mcp.py` 不再继承环境代理；
+  `LLM_BASE_URL` 缺失时回退到 `ANTHROPIC_BASE_URL`/`OPENAI_BASE_URL`；
+- 增加诊断 `model_hint`（只记录 flavor/model/gateway host，不含 key）；
+- 平台自动准入；试跑 **CYBENCH 3 题** 最新观测：
+  - 模型调用 **10**，Tokens **10k**
+  - 1 解出、1 未解出、1 判分中（最后一次读取时）
+- 这证明平台到模型的链路已经打通；剩余是模型在 CYBENCH 题上的实际表现，不是接口故障。
+
+### 当前状态
+
+- 镜像 v3 已上传/注册/自动准入；
+- 试跑仍在收尾，尚未拿到最终 3/3 成绩；
+- `/evals/new` 是**个人测评**，页面明确与官方认证结果分层；
+- 正式比赛 entry、队伍审核、规则附件仍未完成。
+
+### 密钥提示
+
+平台页面把错误归因于“你自己的密钥过期/吊销”，但本次实际证据是
+`model gateway must use HTTPS`，随后是代理导致的无调用；DeepSeek key 在本地
+真实模型 7/7 中一直可用。不要把这类错误直接归因于 key。
