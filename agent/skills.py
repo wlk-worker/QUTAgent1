@@ -381,7 +381,9 @@ Return exactly one JSON object per turn (no markdown, no prose outside it):
   allowlisted auth/custom header; platform/model secrets are refused.
 - submit: submit one answer with question_id and mandatory evidence.
 - refresh: re-read platform challenge/instance state.
-- download: fetch a player-visible attachment into the work directory.
+- download: fetch a **platform attachment** into the work directory. It is
+  not for files on the target's web root; use `http` GET or `shell curl` for
+  those.
 - finish: stop when the task is complete or unrecoverable.
 Budget: one action per turn; keep `why` short; prefer small probes that answer
 one question; record findings in files/notes instead of repeating output; large

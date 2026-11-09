@@ -476,15 +476,28 @@ def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Ca
                 observation = {"challenge": challenge, "pending": pending_questions(info) if info is not None else qa_questions(task, challenge, set(result["solved"]))}
             elif kind == "download":
                 name = str(action.get("name") or "")
-                raw = platform.download_attachment(task.challenge_id, name, instance_id)
-                destination = (task.work_dir / "attachments" / name).resolve()
-                root = (task.work_dir / "attachments").resolve()
-                if not destination.is_relative_to(root):
-                    raise ValueError("attachment path escapes work directory")
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                destination.write_bytes(raw)
-                result["tool_calls_made"] += 1
-                observation = {"saved_to": str(destination), "bytes": len(raw)}
+                try:
+                    raw = platform.download_attachment(task.challenge_id, name, instance_id)
+                except PlatformError as exc:
+                    # A target file such as /nettools is not a platform
+                    # attachment. Return an observation instead of aborting the
+                    # run so the model can retry with http/shell.
+                    observation = {
+                        "error": "attachment_unavailable",
+                        "status": exc.code,
+                        "hint": "download is only for platform attachments; "
+                                "use http GET or shell curl for target files",
+                    }
+                    result["tool_calls_made"] += 1
+                else:
+                    destination = (task.work_dir / "attachments" / name).resolve()
+                    root = (task.work_dir / "attachments").resolve()
+                    if not destination.is_relative_to(root):
+                        raise ValueError("attachment path escapes work directory")
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.write_bytes(raw)
+                    result["tool_calls_made"] += 1
+                    observation = {"saved_to": str(destination), "bytes": len(raw)}
             else:
                 qid = str(action.get("question_id") or ("answer" if task.run_mode == "qa" else "flag"))
                 answer = action.get("answer")

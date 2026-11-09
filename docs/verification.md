@@ -83,7 +83,7 @@
 |---|---|---|
 | Windows 全量测试 | `python -X utf8 -m unittest discover -s tests -v` → **Ran 151 tests, OK (skipped=4)** | 代码/契约/本地闭环；新增 61 项 skills/loop/HTTP/MCP（含 MCP auth header）+ 21 项 SQLi/MCP/Pwn/XSS/MCP 穿越/SSRF 分类靶题 |
 | 镜像内全量测试 | `docker run --rm --user root -v "$PWD:/repo" -w /repo --entrypoint python qutagent:dev -X utf8 -m unittest discover -s tests -v` → **Ran 151 tests, OK (skipped=3)** | Linux 镜像内执行，Pwn/XSS 端到端实际运行；仍不是平台/真实模型验证 |
-| 镜像工具链构建 | `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` → 成功，完整 **1078 s** + `ctf-browse`/skills/MCP auth 增量重建，镜像 `sha256:9e362a97…`，内容 `943,216,620` B ≈ 0.88 GiB，磁盘 3.57 GB | 构建期联网安装；评测期离线 |
+| 镜像工具链构建 | `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` → 成功，完整 **1078 s** + `ctf-browse`/skills/MCP auth 增量重建，镜像 `sha256:2e90dd5a…`，内容 `943,217,806` B ≈ 0.88 GiB，磁盘 3.57 GB | 构建期联网安装；评测期离线 |
 | 工具链 required 检查 | `docker run --rm --entrypoint python qutagent:dev /app/scripts/check_toolchain.py` → exit 0，`verdict: passed`，**required_failed: []**，`optional_failed: ["import:angr"]` | 66 项检查；angr 为已知 optional 缺失 |
 | 离线检查 | 同上加 `--network none` → exit 0 / passed | 运行期工具链不依赖网络 |
 | 官方本地镜像检查 | `ctfy agent check qutagent:dev --json` → `verdict: passed`、`ran_locally: true`、`findings: []` | CTFY-0001 本地 dry run；不是平台审核 |
@@ -123,9 +123,16 @@
 - v3 推送 `sha256:9e362a97…`，禁用环境代理、补充
   `ANTHROPIC_BASE_URL`/`OPENAI_BASE_URL` 回退，并只记录
   `model_hint`（flavor/model/gateway host，不含 key）；
-- v3 平台自动准入；CYBENCH 3 题试跑最新观测：
-  **模型调用 10、Tokens 10k、1 解出 / 1 未解出 / 1 判分中**；
-  说明模型链路已打通，剩余是题目表现而非接口失败；
+- v3 平台自动准入；CYBENCH 3 题试跑结果：
+  **CYBENCH-007 解出（7 轮 / 7.8k tokens）**；
+  **CYBENCH-004 未解出 · platform_error**（3 次模型调用，模型把 target 上的
+  `/nettools` 当作平台附件走 `download`，工具选择错误）；
+  **CYBENCH-005 未调用到模型**（0 调用 / deadline；平台自动重试一次仍失败，
+  时间线显示 target/instance 未就绪，不是模型 key）；
+- 由此证明模型网关/key 已打通；004 是 agent 工具语义 bug，005 是 target 启动/
+  平台重试路径。源码已把 `download` 失败改为可恢复 observation，并明确 target
+  文件必须用 http/shell；该修复已推送为 `qutagent:v4`
+  （`sha256:2e90dd5a…`），平台注册为 `qutagent-v4`，试跑进行中；
 - 这是**个人测评**入口，页面明确与官方认证结果分层；不是正式比赛 entry/榜单；
 - 正式平台 entry、队伍审核、规则附件仍未完成。
 
