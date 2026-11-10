@@ -1,116 +1,226 @@
-# QUTAgent：TPCTF 2026 / CTFy 原型
+# QUTAgent
 
-队友交付请先阅读 [TEAM_START](docs/TEAM_START.md)，统一入口是 `python scripts/team.py smoke`。完整包可自动加载随包镜像；轻量包需另外准备镜像。不要直接把包含 `artifacts/` 凭据的工作目录整体转发。
+一个面向 CTFy / CTF 评测的自主 Agent 原型。它读取平台任务，调用模型网关，使用 shell、HTTP、MCP 等工具解题，最后把结果写回 `result.json`。覆盖 Web、Pwn、AI 安全和 Misc 类题目。
 
-这是 CTFY-0001 求解镜像、CTFY-0002 Web 出题包生成器、进程级 Web 靶题联调器与出题/参赛流程控制器的可用原型。**求解器已融合 SWE-agent v0.7、ctf-agent、Koshary、AWE、PwnAI 的分类 playbook/格式纠错/循环检测/历史压缩/HTTP 会话/MCP 能力；镜像已装入 Web/Pwn/AI 安全工具链（r2、pwntools、gdb、one_gadget、seccomp-tools、sqlmap、ffuf、nuclei、Chromium 等），WSL Docker 构建 3.57 GB（内容 0.88 GiB），`ctfy agent check` 与 required 工具检查均通过，镜像内 153 项测试通过；SQLi/XSS/Pwn/AI-MCP（含 `read_file` 工具目录穿越）/SSRF 分类靶题假模型闭环；**真实 DeepSeek（`deepseek-flash`）在本地合成靶题上 7 个 set 全部 3/3**（validation、SQLi、XSS、Pwn、SSRF、AI-MCP、MCP 工具穿越），真实用量/失败过程记录在 [验证记录](docs/verification.md)。CTFy 镜像已上传/注册，v8 增加并发平台连接重试、启动阶段 challenge/target 等待限时回退与 download 恢复；平台试运行由用户执行，尚无正式比赛 entry/榜单成绩、题包审核或平台接受记录。**规则与未确认事项见 [规则审计](docs/rules-audit.md) 和 [规则询问清单](docs/rules-request.md)，求解器能力映射见 [solver skills](docs/solver-skills.md)，工具链见 [toolchain](docs/toolchain.md)，实测证据见 [验证记录](docs/verification.md) 和 [靶题实验记录](docs/lab-experiments.md)。
+> 本仓库是开发与联调版本。仓库中的 mock 平台、本地靶题和 dry run 不等于真实平台成绩；正式使用前请确认赛事规则、授权范围和模型额度。
 
-## 最快本地启动
+## 1. 环境要求
 
-在项目根目录运行（Windows PowerShell：`python`；WSL/Linux：`python3`）：
+| 依赖 | 用途 |
+|---|---|
+| Python 3.11+ | 本地入口、测试和实验 |
+| Docker（Linux containers） | 构建/运行最终镜像；Windows 可用 Docker Desktop 或 WSL |
+| `linux/amd64` 镜像支持 | 最终镜像架构 |
+| 真实模型 API | 只有跑真实模型实验时才需要 |
+
+Windows 下建议使用 PowerShell；WSL/Linux 下使用 `python3`。
+
+## 2. 最快开始：不需要密钥
 
 ```powershell
 python scripts/run_local.py
 ```
 
-脚本用 [合成 dry-run 输入](examples/dry-run/task.json)在临时目录启动真实的 `agent/main.py`，打印并校验 `result.json`，不需要 Docker、平台令牌或模型密钥。它只验证入口和文件契约，不能证明真实解题能力。比赛镜像的入口及工作目录见 `Dockerfile`；队友改动位置见 [扩展说明](docs/extension-points.md)。
+它会在临时目录用 `examples/dry-run/task.json` 启动真实入口，校验任务读取和 `result.json` 写入，不需要 Docker、平台 token 或模型 key。
 
-## 目录
-
-- `agent/`：读取任务与环境、调用模型网关和平台 API、分类 playbook、shell/HTTP/MCP 工具、写 `result.json`。
-- `agent/skills.py`：web/pwn/ai/misc/qa 分类和各类 playbook；`agent/mcp.py`：MCP 客户端；`agent/tools.py`：有状态 HTTP 会话。
-- `labs/`：纯标准库的授权 Web 靶题、mock CTFy 平台、OpenAI 兼容假模型和实验 runner。
-- `toolbox/`：镜像内 `ctf-checksec`、`ctf-disasm`、`ctf-debug`、`ctf-strings` 辅助命令与 nuclei 起步模板。
-- `author/generate.py`、`author/prepare.py`：以 seed 生成原创 Web 题候选包，并做本地审计/smoke 验证。
-- `author/controller.py`：赛时出题流程（生成/复用 → 本地检查 → 确定性打包 → 可选上传 → 只读轮询）；默认 dry-run。
-- `scripts/run_lab.py`：固定 dev/validation 预算的完整靶题联调入口；`--llm-env-file` 可加载本地 LLM_* 文件（值不回显）。
-- `scripts/platform_flow.py`：镜像注册、probe、状态读取和独立 agent entry 的安全流程；默认 dry-run。
-- `tests/`：不接触真实平台的契约、靶题、抓取会话、MCP、出题/参赛流程测试（当前 153 项；Windows 4 项 skip，镜像内 3 项 skip）。
-- `examples/dry-run/`、`scripts/run_local.py`：无需凭据的本地入口检查。
-- `scripts/check_web_tools.py`、`scripts/check_toolchain.py`：镜像内基础 Web 工具/完整工具链检查。
-- `_research/ctfy/`、`_research/repos/`：公开标准与参考项目快照，不是运行代码，也不是权威实时规则。
-- `docs/solver-skills.md`、`docs/reference-projects.md`、`docs/toolchain.md`、`docs/lab-experiments.md`、`docs/labs-categories.md`、`docs/authoring-upload.md`、`docs/participation-flow.md`：能力映射、参考项目来源、工具链、SQLi/MCP/Pwn 分类靶题和实测证据边界。
-- `docs/real-model-runbook.md`：真实模型实验的凭据、预算、判读和平台后续步骤。
-- `docs/rules-request.md`：可直接发给组委会的赛道规则询问清单。
-- `docs/git-baseline.md`：版本控制范围、凭据排除规则和复现命令。
-
-## 已验证的本地命令
-
-Windows（当前开发机）：
+如果只想检查 Python 代码和本地靶题：
 
 ```powershell
-python -X utf8 -m unittest discover -s tests -v          # 153 项，OK (skipped=4)
-python -X utf8 scripts/run_local.py                      # 入口/dry-run 契约
-python -X utf8 scripts/run_lab.py --model fake --set dev # 靶题 + 假模型 3/3
-python -X utf8 scripts/run_lab.py --model real --set validation  # 无 LLM_* 时 blocked，不伪造
-python -X utf8 scripts/check_llm_env.py --env-file artifacts/llm.env  # 只显示 set/MISSING
-python -X utf8 scripts/run_lab.py --model real --set validation --llm-env-file artifacts/llm.env  # 可选的本地凭据文件
-python -X utf8 author/controller.py --seed 46 --dry-run  # 出题 dry-run，零网络
-python -X utf8 scripts/platform_flow.py register-harness --id qutagent `
-  --image registry.example/qutagent:dev --display-name QUTAgent --version dev
+python -X utf8 -m unittest discover -s tests -v
+python -X utf8 scripts/run_lab.py --model fake --set dev
 ```
 
-WSL/Linux（Docker 与 `ctfy`/`ctfy-admin` 可用时）：
+## 3. 构建和检查镜像
+
+在仓库根目录：
 
 ```bash
-cd /mnt/c/Users/lenovo/Desktop/QUTAgent
-python3 -m unittest discover -s tests -v
 docker build --pull=false --platform linux/amd64 -t qutagent:dev .
-ctfy agent check qutagent:dev --json
 docker run --rm --entrypoint python qutagent:dev /app/scripts/check_toolchain.py
-docker run --rm --network none --entrypoint python qutagent:dev /app/scripts/check_toolchain.py --quiet
-docker run --rm --mount type=bind,src="$PWD/scripts/check_web_tools.py",dst=/tmp/check_web_tools.py,readonly --entrypoint python qutagent:dev /tmp/check_web_tools.py
-ctfy-admin challenge audit --all --challenges-dir author/generated --strict --json
-ctfy-admin challenge smoke --all --challenges-dir author/generated --ephemeral-ports --jobs 2 --timeout 180
 ```
 
-生成另一个候选题包：
+完全离线检查：
 
 ```bash
-python3 author/generate.py author/generated/document-desk-46 --seed 46
+docker run --rm --network none --entrypoint python qutagent:dev \
+  /app/scripts/check_toolchain.py --quiet
 ```
 
-自动准备并验证一个新候选题包（建议在 WSL 中运行）：
+镜像入口是：
+
+```text
+/app/agent/main.py
+```
+
+容器工作目录是 `/ctfy/work`。评测时从该目录读取 `task.json`、`README.md`，把结果写回 `result.json`。
+
+## 4. 本地假模型联调
+
+以下命令不需要真实模型：
+
+```powershell
+python -X utf8 scripts/run_lab.py --model fake --set dev
+python -X utf8 scripts/run_lab.py --model fake --set web-sqli
+python -X utf8 scripts/run_lab.py --model fake --set xss
+python -X utf8 scripts/run_lab.py --model fake --set pwn
+python -X utf8 scripts/run_lab.py --model fake --set ssrf
+python -X utf8 scripts/run_lab.py --model fake --set ai-mcp
+python -X utf8 scripts/run_lab.py --model fake --set ai-mcp-traversal
+```
+
+这些靶题在 `labs/` 中，使用假模型驱动真实工具链，不会请求付费模型。
+
+## 5. 使用真实模型
+
+复制模板，填入你自己的模型配置：
 
 ```bash
-python3 author/prepare.py --smoke-runs 2
+mkdir -p artifacts
+cp examples/llm.env.example artifacts/llm.env
 ```
 
-如需重跑仓库的全部本地验收，可在 `ctfy`、`ctfy-admin`、Docker 与 Compose 均可用时运行 `bash scripts/verify_local.sh`。
+编辑 `artifacts/llm.env`：
 
-生成器拒绝覆盖非空目录。`--seed` 只调整表面路径与文件名；每队答案由 CTFy 提供的 `ANSWER_FLAG` 注入，不由 seed 决定。生成题包后应按当前 CLI 帮助核对命令与版本，并完成静态审计和动态 smoke。当前公开的 CTFy 0.7.0 包尚未提供标准页面提到的 `ctfy authoring check/smoke --local`，上面的 `ctfy-admin challenge audit/smoke` 是该版本的可执行本地替代。未经明确授权，不向真实比赛上传。
+```text
+LLM_FLAVOR=openai
+LLM_MODEL=你的模型 ID
+LLM_BASE_URL=https://你的模型服务/v1
+LLM_API_KEY=你的 API key
+```
 
-## 下一阶段
+先检查配置是否完整（不会回显 key）：
 
-1. **真实模型实验（已完成）**：DeepSeek `deepseek-flash` 在 validation/SQLi/XSS/Pwn/SSRF/AI-MCP/MCP 穿越 7 个 set 上均 3/3；凭据只在本机 gitignored `artifacts/llm.env`。下一步是用真实平台模型/额度重复。
-2. **平台流程**：10 月 28 日记录为镜像已上传并注册、等待人工审核；尚无正式平台 entry/解题成绩。出题包上传仍未发生，最新状态应在平台复核，见 [上传记录](docs/platform-upload.md)。
-3. **赛道规则**：附件仍未取得；按 [规则询问清单](docs/rules-request.md) 向组委会确认模型额度、运行限制、镜像截止、出题计分/窗口与 entry/奖项归属。
-4. **镜像固定**：当前基础镜像为浮动 `python:3.11-slim`，赛前建议按 digest 固定；真实模型/平台验证后再做最终重建。
+```bash
+python scripts/check_llm_env.py --env-file artifacts/llm.env
+```
 
-不要把本地 smoke、mock 平台判定或 dry-run 计划视为平台审核/比赛接受。
+跑一个最小验证集：
 
-## 运行契约
+```bash
+python scripts/run_lab.py --model real --set validation --llm-env-file artifacts/llm.env
+```
 
-容器入口是绝对路径 `/app/agent/main.py`，工作目录 `/ctfy/work`。`CTFY_EVAL_DRY_RUN=1` 时，即使没有 token/key 也应写入 `result.json`。一般任务需要 `CTFY_PLATFORM_URL`、`CTFY_TOKEN`、`LLM_FLAVOR`、`LLM_MODEL`、`LLM_API_KEY`，可有 `LLM_BASE_URL`。镜像不包含私人 key；不在运行期下载依赖。
+也可以提高复杂题的预算：
 
-| 配置 | 来源与作用 |
+```bash
+python scripts/run_lab.py --model real --set pwn \
+  --llm-env-file artifacts/llm.env --timeout-s 300 --max-turns 16 --max-requests 16
+```
+
+`artifacts/` 已在 `.gitignore` 中；不要把 `artifacts/llm.env` 提交到 Git。
+
+## 6. 在 CTFy 平台使用
+
+镜像运行契约（CTFY-0001）：
+
+- 入口：`/app/agent/main.py`
+- 工作目录：`/ctfy/work`
+- 必需/可选环境变量由平台注入：
+
+| 变量 | 作用 |
 |---|---|
-| `CTFY_WORK_DIR` | 平台给出的可写目录，默认 `/ctfy/work`；入口从这里读取 `task.json`、`README.md` 并写回 `result.json`。本地脚本自动设置临时目录。 |
-| `CTFY_EVAL_DRY_RUN` | 平台镜像检查设为 `1`；此模式无平台令牌和模型密钥。 |
-| `CTFY_PLATFORM_URL`、`CTFY_TOKEN` | 普通评测由平台注入，用于平台 REST 请求；本地 dry run 不需要。 |
-| `LLM_FLAVOR`、`LLM_MODEL`、`LLM_API_KEY`、`LLM_BASE_URL` | 普通评测由平台注入的模型协议、模型、凭据、可选网关地址；密钥为空时直接报错，不读取私人备份密钥。 |
-| `CTFY_EVAL_MAX_TURNS` | 平台可给软预算；当前代码在未给出时采用自身的 64 轮上限。 |
-| `QUT_RUN_TIMEOUT_S` | 本地实验额外的运行时间上限（秒）；与任务时间限制取较小值，最多 10800 秒。仅用于受控联调，不代表比赛额度。 |
-| `QUT_MODEL_MAX_REQUESTS` | 本地额外的模型请求上限，默认 64、最多 500；每次重试也计入。 |
-| `QUT_WEB_ONLY` | 仅用于 `labs/` 实验：设为 `1` 时禁用 shell，只保留受 origin 白名单约束的 HTTP 工具、平台提交/刷新/下载；不是比赛配置。 |
+| `CTFY_PLATFORM_URL` | 平台 API 地址 |
+| `CTFY_TOKEN` | 平台任务 token |
+| `LLM_FLAVOR` | `openai` 或 `anthropic` |
+| `LLM_MODEL` | 模型 ID |
+| `LLM_API_KEY` | 本次运行的模型凭据 |
+| `LLM_BASE_URL` | 平台/供应商模型网关地址 |
+| `CTFY_WORK_DIR` | 工作目录，默认 `/ctfy/work` |
 
-本项目不自动读取 `.env` 文件，也不在仓库中存放真实凭据。普通评测的地址、密钥及题目由平台注入；请勿把本地合成 dry run 当作真实平台任务。
+Agent 会写 `result.json`，正常退出码为 `0`。
 
-当前求解器只执行 `instance`、`qa` 两种模式；模型以 JSON 动作驱动 shell、有状态 HTTP（Cookie/同源重定向）、MCP、提交、刷新和附件下载，并按 category 注入 Web/Pwn/AI/Misc/QA playbook。其他模式会记录不支持。`fully_solved` 只在平台明确确认整题完成，或已知问题全部正确且平台任务明确给出 `gated_questions=0` 时为真；模型提前结束、轮数耗尽、无待答问题均不算完成。`solved` 保留平台确认正确的问题，但最终计分仍以平台成绩记录为准。
+构建 `linux/amd64` 镜像并推送到平台 registry：
 
-Linux shell 使用环境变量允许列表，只保留运行需要的 PATH、语言和临时目录等变量，不继承平台或模型密钥；超时和命令结束时清理该命令进程组，限制实际采集的 stdout/stderr 字节数。结果和事件记录会按已知密钥值脱敏。**环境过滤不是进程隔离**：同容器内的 `/proc`、共享文件和网络权限仍由运行环境决定，不能把此措施解释为密钥或目标范围的完整防护。HTTP 请求的总预算可令调用方及时返回；极慢的后台请求线程可能晚些才退出，故超时后的 POST 按“结果不确定”处理，不自动重试。正式使用前仍需授权靶题与比赛平台联调。
+```bash
+bash scripts/push_image.sh artifacts/ctfy.env qutagent:dev v1
+```
 
-镜像在构建期安装 Web/Pwn/AI 安全工具链（pwntools、gdb、r2、one_gadget、seccomp-tools、sqlmap、ffuf、nuclei、Chromium、mcp 等），版本清单保存在 `/app/tool-versions.txt`；评测期不下载软件。当前已有**镜像内** 153 项测试与 SQLi/XSS/Pwn/AI-MCP（含 read_file 工具穿越）/SSRF 分类靶题闭环；**真实 DeepSeek `deepseek-flash` 在本地 validation/SQLi/XSS/Pwn/SSRF/AI-MCP/MCP 穿越 7 个 set 上均 3/3**（`labs/` 仍是进程级隔离，不是容器级；mock 平台不是真实 CTFy）。CTFy 镜像已上传/注册，v8 增加并发平台连接重试、启动阶段 challenge/target 等待限时回退与 download 恢复；正式比赛 entry/榜单成绩仍未发生，规则附件/队伍审核仍是后续工作。
+`artifacts/ctfy.env` 需要包含平台地址和 token，示例见 `examples/platform.env.example`。不要提交真实 token。
 
-## 评测约束
+推送后，在平台的“新建测评”页面填写：
 
-未来比较模型循环或工具改动时，固定题集、模型、额度和时间预算；分开开发题与验证题，保存每题平台判定和失败类别。mock 测试、构建成功、扫描器输出、参考解 smoke 与真实平台接受 flag 属于不同证据等级，不能混为一谈。此方法参考 scientific-critical-thinking、experimental-design 技能；技能出处：Kassis 等，《[Scientific Agent Skills: A Library of Procedural Knowledge for Research Agents](https://doi.org/10.48550/arXiv.2609.00065)》，2026。
+```text
+registry.ctfy.io/<你的命名空间>/qutagent:v1
+```
+
+再选择模型并启动。镜像是否允许运行、是否需要人工审核，以平台页面为准。
+
+## 7. 目录结构
+
+```text
+agent/       Agent 主循环、模型网关、平台 API、shell/HTTP/MCP 工具、skills
+labs/        本地 CTF 靶题、mock 平台、假模型、实验 runner
+tests/       不接触真实平台的单元/集成测试
+toolbox/     镜像内 CTF 辅助脚本
+author/      出题包生成/审计/打包流程
+scripts/     构建、推送、实验、平台流程、环境检查脚本
+docs/        验证记录、故障排查、工具链、交接说明
+examples/    配置模板和 dry-run 输入
+```
+
+## 8. 测试与验收
+
+```powershell
+python -X utf8 -m unittest discover -s tests -v
+```
+
+镜像内运行同一套测试：
+
+```bash
+docker run --rm --user root -v "$PWD:/repo" -w /repo \
+  --entrypoint python qutagent:dev \
+  -X utf8 -m unittest discover -s tests -v
+```
+
+当前本地测试规模为 153 项；Windows 和镜像内会有少量与平台/浏览器相关的 skip。测试通过只说明本地契约和工具链可用，不代表真实平台分数。
+
+## 9. 常见问题
+
+### 平台显示“未调用到模型”
+
+先看对应任务的 `/ctfy/work/result.json`：
+
+| 结果特征 | 含义 |
+|---|---|
+| `stop_reason=deadline`、`category=""` | 卡在平台 challenge 元数据，尚未进入模型 |
+| `stop_reason=deadline`、`category` 非空 | 卡在 target/instance 启动等待 |
+| `startup_fallback` 存在 | 启动阶段已回退，模型应继续运行 |
+| `stop_reason=model_error` | 模型网关/API key 问题 |
+| `stop_reason=platform_error` | 平台 API 或工具调用错误 |
+| `RemoteDisconnected` / `network_error` | 平台连接不稳定，当前版本会重试幂等 GET |
+
+平台页面提示“检查你的 key”是通用提示；如果模型调用次数为 0，通常不是 key 问题。
+
+### `model gateway must use HTTPS`
+
+旧版本 Agent 会拒绝平台内网 HTTP 网关。当前版本允许内网 HTTP 网关；请使用最新镜像重新构建。
+
+### `download` 报错
+
+`download` 只用于平台附件。target web root 上的文件请用 `http` GET 或 `shell curl`。
+
+### 模型网关返回空内容
+
+在本地环境检查 `LLM_FLAVOR`、`LLM_MODEL`、`LLM_BASE_URL` 和 `LLM_API_KEY` 是否匹配；用 `scripts/check_llm_env.py` 检查配置，不要在日志中打印 key。
+
+### 平台 target 启动失败
+
+如果 `result.json` 显示启动回退、但工具访问 target 全部失败，问题在平台/靶场启动，不在模型 key。保存该任务的 `result.json` 和平台运行 ID，提交给平台侧排查。
+
+## 10. 安全边界
+
+- 不要把真实 token、API key、`.env` 文件提交到 Git。
+- `artifacts/`、`runtime/`、`dist/` 已在 `.gitignore` 中。
+- 不要在命令行中明文传 token；使用 `scripts/push_image.sh` 读取被忽略的 env 文件。
+- 本地 dry run、mock 平台、假模型和真实平台成绩是不同证据等级，不能混用。
+- 本仓库不是对任何未授权系统进行测试的授权；只在赛事或明确授权的靶场中使用。
+
+## 11. 更多文档
+
+- [队友交接说明](docs/TEAM_START.md)
+- [故障排查与平台记录](docs/platform-upload.md)
+- [真实验证记录](docs/verification.md)
+- [工具链与构建](docs/toolchain.md)
+- [本地靶题实验](docs/lab-experiments.md)
+- [能力与参考项目](docs/reference-projects.md)
+- [扩展点](docs/extension-points.md)
