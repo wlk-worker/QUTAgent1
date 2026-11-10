@@ -33,9 +33,9 @@ def _time_budget(raw: dict) -> float:
 def _turn_budget(raw: dict) -> int:
     value = os.environ.get("CTFY_EVAL_MAX_TURNS") or raw.get("max_turns")
     try:
-        return max(1, min(int(value), 500)) if value is not None else 64
+        return max(1, min(int(value), 500)) if value is not None else 96
     except (TypeError, ValueError):
-        return 64
+        return 96
 
 
 def _working_time(budget: float) -> float:

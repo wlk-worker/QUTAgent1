@@ -3,6 +3,7 @@ scope-restricted structured HTTP tool. None of this is an OS isolation boundary.
 """
 from __future__ import annotations
 
+import hashlib
 import http.cookiejar
 import json
 import os
@@ -235,9 +236,11 @@ def shell(command: str, cwd: Path, timeout_s=20, output_limit=12000, *, deadline
     return result
 
 
-def _http_result(method, url, origin, status, raw, headers, max_bytes, started_at):
+def _http_result(method, url, origin, status, raw, headers, max_bytes, started_at,
+                 preview_bytes=None):
     truncated = len(raw) > max_bytes
-    body = raw[:max_bytes]
+    preview_limit = max(256, min(int(preview_bytes or max_bytes), max_bytes))
+    body = raw[:preview_limit]
     text = body.decode("utf-8", errors="replace")
     reported = {}
     for key, value in list(headers.items())[:32]:
@@ -255,6 +258,25 @@ def _http_result(method, url, origin, status, raw, headers, max_bytes, started_a
         "redirect_blocked": status in REDIRECT_STATUSES,
         "elapsed_s": round(time.monotonic() - started_at, 3),
     }
+
+
+def _save_http_body(result: dict, raw: bytes, save_to: str | None) -> dict:
+    """Persist the (possibly binary) body for reversing/forensics tasks."""
+    if not save_to:
+        return result
+    try:
+        path = Path(save_to)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(raw)
+    except (OSError, ValueError) as exc:
+        result["save_error"] = type(exc).__name__
+        return result
+    result.update({
+        "saved_to": str(path),
+        "saved_bytes": len(raw),
+        "saved_sha256": hashlib.sha256(raw).hexdigest(),
+    })
+    return result
 
 
 def http_request(method: str, url: str, *, allowed_origins, body=None, timeout_s=15,
@@ -422,7 +444,7 @@ class HttpSession:
         except (urllib.error.URLError, TimeoutError, OSError):
             return {"error": "network_error"}, b"", {}
 
-    def request(self, method, url, *, body=None, headers=None) -> dict:
+    def request(self, method, url, *, body=None, headers=None, save_to=None) -> dict:
         """Perform one bounded request, returning a structured observation."""
         started_at = time.monotonic()
         method = str(method or "").upper()
@@ -457,6 +479,9 @@ class HttpSession:
             capped = max(256, min(int(self.max_response_bytes), 1_000_000))
         except (TypeError, ValueError):
             return {"error": "invalid_max_response_bytes"}
+        if save_to:
+            # Binary/forensics downloads need the body, not a 64 KiB preview.
+            capped = max(capped, 4_000_000)
         current_url = _clean_url(parsed)
         current_method, current_payload = method, payload
         redirects: list[str] = []
@@ -480,7 +505,9 @@ class HttpSession:
             location = _get_header(response_headers, "Location")
             if status not in REDIRECT_STATUSES or not location:
                 result = _http_result(current_method, current_url, origin, status, raw,
-                                      response_headers, capped, started_at)
+                                      response_headers, capped, started_at,
+                                      preview_bytes=64_000 if save_to else None)
+                result = _save_http_body(result, raw, save_to)
                 result["redirects"] = redirects
                 result["cookie_count"] = len(self.jar)
                 return _redact_observation(result, self.environ)

@@ -196,7 +196,7 @@ docker run --rm --user root -v "${PWD}:/repo" -w /repo --entrypoint python qutag
 python -X utf8 -m unittest discover -s tests -v
 ```
 
-结果：Windows `Ran 153 tests`、`OK (skipped=4)`（跳过 2 个既有 Linux-only shell 测试 + Pwn Linux E2E + XSS Playwright E2E）；镜像内（`--user root`）`Ran 153 tests`、`OK (skipped=3)`，Pwn/XSS 端到端实际执行。本轮新增 `tests/test_labs_categories.py` 共 21 项（其中 XSS 7 项、MCP read_file 3 项、SSRF 3 项）：
+结果：Windows `Ran 155 tests`、`OK (skipped=4)`（跳过 2 个既有 Linux-only shell 测试 + Pwn Linux E2E + XSS Playwright E2E）；镜像内（`--user root`）`Ran 155 tests`、`OK (skipped=3)`，Pwn/XSS 端到端实际执行。本轮新增 `tests/test_labs_categories.py` 共 21 项（其中 XSS 7 项、MCP read_file 3 项、SSRF 3 项）：
 
 - SQLi 靶题：登录 SQLi + `UNION` 取 flag；布尔 oracle true/false 差异；seed 路由变化与动态 flag。
 - MCP 靶题：`initialize`/`tools/list`/`read_note`/`get_flag`，JSON 与 SSE 两种响应，flag 与 SHA 对应。

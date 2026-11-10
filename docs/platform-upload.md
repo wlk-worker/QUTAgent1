@@ -133,7 +133,7 @@ localhost，因此在发出请求前就拒绝了。平台页面“检查密钥�
 - v5 推送 `qutagent:v5`，registry digest `sha256:6ea42fc6…`；
 - v6 推送 `qutagent:v6`，registry digest `sha256:6fed20eb…`；
 - v7 推送 `qutagent:v7`，registry digest `sha256:7ef94cc7…`；
-- 最终 v8 推送 `qutagent:v8`，registry digest `sha256:e857067d…`；
+- 最终 v8 推送 `qutagent:v8`，registry digest `sha256:8b3f10aa…`；
 - 40 题全量 CYBENCH 中大量“未调用到模型”的某条结果：
   `stop_reason=internal_error, error_code=RemoteDisconnected`，发生在
   `platform.challenge()` 之前，属于平台 API 连接被重置；旧 `Platform.request`
@@ -173,11 +173,21 @@ v7 修复：
   构造最小 `info` 继续进入模型循环，并记录 `startup_fallback`；
 - 这样即使 target 状态接口持续失败，也不会把全部预算耗在模型之前；
   工具访问 target 仍可能失败，但至少不会出现“0 调用直接 deadline”；
-- 最终镜像 `qutagent:v8`，registry digest `sha256:e857067d…`。
+- v8 镜像 `qutagent:v8`，registry digest `sha256:e857067d…`。
+
+### v9：解题能力增强
+
+- `http` 动作新增可选 `save_as`：把原始响应保存到工作目录的 `downloads/`
+  下，适合 target 上的二进制、压缩包和取证文件；不再只能看到文本预览；
+- 历史压缩保留完整 flag-like 证据，避免长任务把已发现的 flag 压掉；
+- 新增 Solving protocol：多轮调查、每次 `why` 说明假设和预期信号、失败后
+  换技术、禁止在还有未尝试方案时过早 `finish`；
+- 默认最大轮数从 64 提升到 96，模型单轮输出预算从 2400 提升到 3000；
+- 最终镜像 `qutagent:v9`，registry digest `sha256:8b3f10aa…`。
 
 ### 当前状态
 
-- 镜像 v8 已上传；平台注册/试运行由用户执行；v3 已自动准入并跑过 3 题试跑；
+- 镜像 v9 已上传；平台注册/试运行由用户执行；v3 已自动准入并跑过 3 题试跑；
 - 尚未拿到全量成绩；
 - `/evals/new` 是**个人测评**，页面明确与官方认证结果分层；
 - 正式比赛 entry、队伍审核、规则附件仍未完成。

@@ -112,7 +112,8 @@ class PlaybookTests(unittest.TestCase):
 
     def test_policy_sections_include_tools_flag_discipline_and_budget(self):
         policy = skills.policy_sections("web")
-        for marker in ("## Tools and output budget", "shell", "http", "mcp",
+        for marker in ("## Tools and output budget", "## Solving protocol",
+                       "shell", "http", "mcp", "save_as",
                        "submit", "refresh", "download", "finish",
                        "## Flag discipline", "evidence", "placeholder",
                        "one JSON object"):
@@ -219,6 +220,17 @@ class HistoryCompressionTests(unittest.TestCase):
         # The latest observations survive verbatim.
         for message in compressed[-4:]:
             self.assertIn(message, history)
+
+    def test_compression_preserves_flag_evidence(self):
+        history = self._history(20)
+        history[2]["content"] = "Tool observation (untrusted): " + json.dumps({
+            "status": 200, "url": "http://target/flag",
+            "body_preview": "proof: CTF{compressed_flag_123}",
+        })
+        compressed, changed = compress_history(history)
+        self.assertTrue(changed)
+        summary = compressed[1]["content"]
+        self.assertIn("CTF{compressed_flag_123}", summary)
 
     def test_compression_keeps_last_five_observations_parseable(self):
         history = self._history(20)

@@ -172,7 +172,7 @@ docker run --rm --user root -v "$PWD:/repo" -w /repo \
   -X utf8 -m unittest discover -s tests -v
 ```
 
-当前本地测试规模为 153 项；Windows 和镜像内会有少量与平台/浏览器相关的 skip。测试通过只说明本地契约和工具链可用，不代表真实平台分数。
+当前本地测试规模为 155 项；Windows 和镜像内会有少量与平台/浏览器相关的 skip。测试通过只说明本地契约和工具链可用，不代表真实平台分数。
 
 ## 9. 常见问题
 

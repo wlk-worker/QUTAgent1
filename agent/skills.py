@@ -150,7 +150,7 @@ _READ_LIMIT = 4_000
 # agent/loop.py:parse_action.
 ACTION_FORMAT_HINT = """Return exactly one JSON object per turn (no markdown fences, no prose):
 {"action":"shell","command":"...","why":"..."}
-{"action":"http","method":"GET|POST","url":"http://host:port/path","body":{},"headers":{},"why":"..."}
+{"action":"http","method":"GET|POST","url":"http://host:port/path","body":{},"headers":{},"save_as":"downloads/name.bin","why":"..."}
 {"action":"mcp","url":"http://host:port/mcp","op":"list_tools|call","tool":"name","arguments":{},"why":"..."}
 {"action":"submit","question_id":"id","answer":"...","evidence":"..."}
 {"action":"refresh"}
@@ -374,7 +374,10 @@ Return exactly one JSON object per turn (no markdown, no prose outside it):
 - http: bounded GET/POST restricted to in-scope origins. Cookies persist across
   turns, same-origin redirects are followed for a few hops, cross-origin
   redirects are refused, responses are truncated, and platform/model secrets
-  are never accepted in request headers.
+  are never accepted in request headers. Add optional `save_as` (for example
+  `"save_as":"downloads/nettools.bin"`) to write the raw response under the
+  work directory for reversing/forensics; binary bodies are not useful as text
+  previews.
 - mcp: JSON-RPC to an in-scope MCP server, e.g.
   {"action":"mcp","url":"http://host:port/mcp","op":"list_tools"} or with
   "op":"call","tool":"name","arguments":{}. Optional `headers` may carry an
@@ -388,6 +391,31 @@ Return exactly one JSON object per turn (no markdown, no prose outside it):
 Budget: one action per turn; keep `why` short; prefer small probes that answer
 one question; record findings in files/notes instead of repeating output; large
 outputs are truncated, so grep/head/tail them."""
+
+SOLVING_PROTOCOL = """## Solving protocol
+Treat the task as a multi-turn investigation, not a one-shot answer. You have a
+bounded but useful turn budget: prefer several small, information-producing
+probes over one large blind action.
+- In every `why`, state the concrete hypothesis and the signal that would
+  confirm or reject it.
+- After each observation, extract exact URLs, credentials, offsets, status
+  codes, error text, and any complete flag/flag-like string. Keep durable
+  scripts/notes in the work directory instead of only in context.
+- If a probe returns the same result twice, change the bug class, tool,
+  endpoint, parameter, or encoding; do not repeat it.
+- Keep a short evidence log per candidate bug: request + input + observed
+  difference. `submit` evidence must quote the actual response fragment.
+- Do not finish while a question is still open and a concrete untried approach
+  remains. If blocked, record the obstacle, try one different technique, and
+  only then finish with what was learned.
+- Target files: use `http` with `save_as` or `shell curl`; `download` is only
+  for platform attachments. Run local binaries/reversing tools on saved files.
+- For Web, baseline first, then differential confirmation; for DOM/XSS use the
+  image's `ctf-browse` helper. For Pwn, triage/static/dynamic/offset/leak/local
+  exploit/remote in that order. For AI/MCP, enumerate tools and baseline before
+  injection. For Misc/crypto/forensics, inventory artifacts and reproduce the
+  flag deterministically.
+"""
 
 FLAG_DISCIPLINE = """## Flag discipline
 - Submit only the complete, real flag observed in a target/tool response,
@@ -416,7 +444,7 @@ def playbook(category: str, *, web_only: bool = False) -> str:
 
 def policy_sections(category: str, *, web_only: bool = False) -> str:
     """Compose the category-specific prompt appendix appended to ``SYSTEM``."""
-    parts = [TOOL_GUIDE]
+    parts = [TOOL_GUIDE, SOLVING_PROTOCOL]
     if web_only:
         parts.append(WEB_ONLY_NOTE)
     parts.extend([playbook(category, web_only=web_only), FLAG_DISCIPLINE])

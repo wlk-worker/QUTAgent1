@@ -2,6 +2,7 @@
 import json
 import os
 import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -313,6 +314,16 @@ class HttpSessionTests(unittest.TestCase):
         payload = json.loads(result["body_preview"])
         self.assertEqual(payload["echo"], "raw-text")
         self.assertEqual(payload["content_type"], "text/plain")
+
+    def test_http_save_as_persists_raw_body(self):
+        with tempfile.TemporaryDirectory() as temp:
+            destination = Path(temp) / "downloads" / "artifact.bin"
+            result = self._session().request("GET", self.origin + "/ok",
+                                             save_to=str(destination))
+            self.assertEqual(result["status"], 200)
+            self.assertTrue(destination.is_file())
+            self.assertEqual(result["saved_bytes"], len(destination.read_bytes()))
+            self.assertEqual(len(result["saved_sha256"]), 64)
 
     def test_bad_requests_are_rejected(self):
         session = self._session()

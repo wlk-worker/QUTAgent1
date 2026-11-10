@@ -31,7 +31,7 @@
 
 - G0：公开规则审计及未知项记录已完成；赛道附件仍未找到，已整理可直接发送的 [规则询问清单](rules-request.md)。
 - G1：本地构建、dry run 与官方 `agent check` 已通过。
-- G2：Windows 全量测试 **153 项 OK（4 skip：2 个 Linux-only + Windows Pwn/XSS 用例）**；镜像内 Linux 全量测试 **153/153（3 skip）**，Pwn 与 XSS（Playwright admin bot）端到端在镜像内执行。包含契约/可靠性/靶题/HTTP 会话/MCP/skills/分类靶题/出题/参赛流程测试。模拟 HTTP 与 mock MCP 不是平台验证。
+- G2：Windows 全量测试 **155 项 OK（4 skip：2 个 Linux-only + Windows Pwn/XSS 用例）**；镜像内 Linux 全量测试 **155/155（3 skip）**，Pwn 与 XSS（Playwright admin bot）端到端在镜像内执行。包含契约/可靠性/靶题/HTTP 会话/MCP/skills/分类靶题/出题/参赛流程测试。模拟 HTTP 与 mock MCP 不是平台验证。
 - G3：**已运行**分类靶题假模型闭环：SQLi（Windows 3/3）、MCP/AI（Windows 3/3）、MCP `read_file` 工具目录穿越（Windows/镜像 3/3）、SSRF 弱 denylist 绕过（Windows/镜像 3/3）、Pwn（镜像内 3/3）、XSS 反射+admin bot（镜像内 3/3）及原路径穿越（Windows/镜像 3/3），mock 平台均接受动态 flag。**真实 DeepSeek `deepseek-flash` 也已在本地合成靶题上完成 7 个 set 全部 3/3**（validation/SQLi/XSS/Pwn/SSRF/AI-MCP/MCP 穿越）；证据见下节。边界：mock 平台不是真实 CTFy，**没有真实平台接受记录**。
 - G4：出题包生成/审计/smoke 的本地证据仍在；`author/controller.py` 和 `scripts/platform_flow.py` 默认 dry-run、mock 契约测试通过；**未上传、未审核、未注册、未创建 entry**。
 - G5：固定 dev/validation 种子集与预算仍有效；**真实 DeepSeek 对照已运行**（validation 3/3、SQLi 3/3、XSS 3/3、Pwn 3/3、SSRF 3/3、AI-MCP 3/3、MCP 穿越 3/3），预算在真实运行中为 180–300s / 10–16 turns / 10–16 requests。
@@ -51,7 +51,7 @@
 
 | 验证 | 实际结果 | 边界 |
 |---|---|---|
-| Windows `python -X utf8 -m unittest discover -s tests -v` | 当轮历史快照：24 项执行，22 通过、2 跳过（Linux 命令及其入口）；退出 0；最新全量为 153 项，见下节 | 含状态、假密钥、短预算、慢响应、请求上限、POST 不确定结果 |
+| Windows `python -X utf8 -m unittest discover -s tests -v` | 当轮历史快照：24 项执行，22 通过、2 跳过（Linux 命令及其入口）；退出 0；最新全量为 155 项，见下节 | 含状态、假密钥、短预算、慢响应、请求上限、POST 不确定结果 |
 | WSL `python3 -m unittest discover -s tests -v` | 24/24 通过，退出 0 | Linux 进程组、命令输出上限和模拟 HTTP 闭环已执行；仍不等于真实靶题解题 |
 | Windows `python -X utf8 scripts/run_local.py` | `dry_run`、`fully_solved:false`，退出 0 | 入口/文件契约检查 |
 | WSL `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` | 成功；本地 image ID `sha256:20e17c0933e13d3dc04d41599f22a56f433710e7b363b68507e8563f8371a3b3` | 构建期下载 apt 软件包；评测期无需下载 |
@@ -81,9 +81,9 @@
 
 | 验证 | 实际结果 | 证据等级与边界 |
 |---|---|---|
-| Windows 全量测试 | `python -X utf8 -m unittest discover -s tests -v` → **Ran 153 tests, OK (skipped=4)** | 代码/契约/本地闭环；新增 64 项 skills/loop/HTTP/MCP（含 MCP auth header）+ 21 项 SQLi/MCP/Pwn/XSS/MCP 穿越/SSRF 分类靶题 |
-| 镜像内全量测试 | `docker run --rm --user root -v "$PWD:/repo" -w /repo --entrypoint python qutagent:dev -X utf8 -m unittest discover -s tests -v` → **Ran 153 tests, OK (skipped=3)** | Linux 镜像内执行，Pwn/XSS 端到端实际运行；仍不是平台/真实模型验证 |
-| 镜像工具链构建 | `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` → 成功，完整 **1078 s** + `ctf-browse`/skills/MCP auth 增量重建，镜像 `sha256:e857067d…`，内容 `943,222,259` B ≈ 0.88 GiB，磁盘 3.57 GB | 构建期联网安装；评测期离线 |
+| Windows 全量测试 | `python -X utf8 -m unittest discover -s tests -v` → **Ran 155 tests, OK (skipped=4)** | 代码/契约/本地闭环；新增 64 项 skills/loop/HTTP/MCP（含 MCP auth header）+ 21 项 SQLi/MCP/Pwn/XSS/MCP 穿越/SSRF 分类靶题 |
+| 镜像内全量测试 | `docker run --rm --user root -v "$PWD:/repo" -w /repo --entrypoint python qutagent:dev -X utf8 -m unittest discover -s tests -v` → **Ran 155 tests, OK (skipped=3)** | Linux 镜像内执行，Pwn/XSS 端到端实际运行；仍不是平台/真实模型验证 |
+| 镜像工具链构建 | `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` → 成功，完整 **1078 s** + `ctf-browse`/skills/MCP auth 增量重建，镜像 `sha256:8b3f10aa…`，内容 `943,226,526` B ≈ 0.88 GiB，磁盘 3.57 GB | 构建期联网安装；评测期离线 |
 | 工具链 required 检查 | `docker run --rm --entrypoint python qutagent:dev /app/scripts/check_toolchain.py` → exit 0，`verdict: passed`，**required_failed: []**，`optional_failed: ["import:angr"]` | 66 项检查；angr 为已知 optional 缺失 |
 | 离线检查 | 同上加 `--network none` → exit 0 / passed | 运行期工具链不依赖网络 |
 | 官方本地镜像检查 | `ctfy agent check qutagent:dev --json` → `verdict: passed`、`ran_locally: true`、`findings: []` | CTFY-0001 本地 dry run；不是平台审核 |
@@ -144,8 +144,11 @@
   `task.json` 的 `challenge` 继续进入模型循环，并记录 `startup_fallback`；
 - v8 进一步把 `start_instance`/`wait_instance` 的启动等待限制为 45 秒；
   超时后用 task.json 的 questions/target_services 构造最小 info，继续进入模型
-  循环；最终推送 `sha256:e857067d…`，平台注册/试运行由用户执行；
+  循环；
+- v9 增强解题能力：`http` 支持 `save_as` 保存二进制、压缩保留 flag 证据、
+  新增 Solving protocol、默认轮数 96、单轮模型预算 3000；最终推送
+  `sha256:8b3f10aa…`，平台注册/试运行由用户执行；
 - 这是**个人测评**入口，页面明确与官方认证结果分层；不是正式比赛 entry/榜单；
 - 正式平台 entry、队伍审核、规则附件仍未完成。
 
-结论：镜像与求解器的**本地可用性**已显著增强（分类 playbook、格式纠错、循环检测、历史压缩、Cookie 会话、同源重定向、MCP、Pwn/Web/AI 工具链），并通过 required 检查与镜像内测试；**真实 DeepSeek 在本地合成靶题上 7 个 set 全部 3/3**。CTFy 镜像已上传/注册/自动准入，v3 试跑已发生真实模型调用；v8 增加并发平台连接重试、启动阶段 challenge/target 等待限时和 task.json 回退，平台注册/试运行由用户执行；**试跑最终成绩、正式平台 entry/成绩、赛道规则附件**仍未完成。
+结论：镜像与求解器的**本地可用性**已显著增强（分类 playbook、格式纠错、循环检测、历史压缩、Cookie 会话、同源重定向、MCP、Pwn/Web/AI 工具链），并通过 required 检查与镜像内测试；**真实 DeepSeek 在本地合成靶题上 7 个 set 全部 3/3**。CTFy 镜像已上传/注册/自动准入，v3 试跑已发生真实模型调用；v9 增加并发平台连接重试、启动阶段 challenge/target 等待限时和 task.json 回退，并增强二进制保存、证据保留和解题协议；平台注册/试运行由用户执行；**试跑最终成绩、正式平台 entry/成绩、赛道规则附件**仍未完成。
