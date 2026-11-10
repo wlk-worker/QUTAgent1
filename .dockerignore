@@ -5,6 +5,15 @@ tests/
 docs/
 labs/
 artifacts/
+dist/
+runtime/
+.env
+.env.*
+*.env
+secrets/
+*.pem
+*.key
+*.token
 __pycache__/
 *.pyc
 scripts/__pycache__/

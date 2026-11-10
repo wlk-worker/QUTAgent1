@@ -1,6 +1,8 @@
 # QUTAgent：TPCTF 2026 / CTFy 原型
 
-这是 CTFY-0001 求解镜像、CTFY-0002 Web 出题包生成器、进程级 Web 靶题联调器与出题/参赛流程控制器的可用原型。**求解器已融合 SWE-agent v0.7、ctf-agent、Koshary、AWE、PwnAI 的分类 playbook/格式纠错/循环检测/历史压缩/HTTP 会话/MCP 能力；镜像已装入 Web/Pwn/AI 安全工具链（r2、pwntools、gdb、one_gadget、seccomp-tools、sqlmap、ffuf、nuclei、Chromium 等），WSL Docker 构建 3.57 GB（内容 0.88 GiB），`ctfy agent check` 与 required 工具检查均通过，镜像内 149 项测试通过；SQLi/XSS/Pwn/AI-MCP（含 `read_file` 工具目录穿越）/SSRF 分类靶题假模型闭环；**真实 DeepSeek（`deepseek-flash`）在本地合成靶题上 7 个 set 全部 3/3**（validation、SQLi、XSS、Pwn、SSRF、AI-MCP、MCP 工具穿越），真实用量/失败过程记录在 [验证记录](docs/verification.md)。尚无真实 CTFy 平台解题成绩、镜像审核、题包审核或平台接受记录。**规则与未确认事项见 [规则审计](docs/rules-audit.md) 和 [规则询问清单](docs/rules-request.md)，求解器能力映射见 [solver skills](docs/solver-skills.md)，工具链见 [toolchain](docs/toolchain.md)，实测证据见 [验证记录](docs/verification.md) 和 [靶题实验记录](docs/lab-experiments.md)。
+队友交付请先阅读 [TEAM_START](docs/TEAM_START.md)，统一入口是 `python scripts/team.py smoke`。完整包可自动加载随包镜像；轻量包需另外准备镜像。不要直接把包含 `artifacts/` 凭据的工作目录整体转发。
+
+这是 CTFY-0001 求解镜像、CTFY-0002 Web 出题包生成器、进程级 Web 靶题联调器与出题/参赛流程控制器的可用原型。**求解器已融合 SWE-agent v0.7、ctf-agent、Koshary、AWE、PwnAI 的分类 playbook/格式纠错/循环检测/历史压缩/HTTP 会话/MCP 能力；镜像已装入 Web/Pwn/AI 安全工具链（r2、pwntools、gdb、one_gadget、seccomp-tools、sqlmap、ffuf、nuclei、Chromium 等），WSL Docker 构建 3.57 GB（内容 0.88 GiB），`ctfy agent check` 与 required 工具检查均通过，镜像内 153 项测试通过；SQLi/XSS/Pwn/AI-MCP（含 `read_file` 工具目录穿越）/SSRF 分类靶题假模型闭环；**真实 DeepSeek（`deepseek-flash`）在本地合成靶题上 7 个 set 全部 3/3**（validation、SQLi、XSS、Pwn、SSRF、AI-MCP、MCP 工具穿越），真实用量/失败过程记录在 [验证记录](docs/verification.md)。CTFy 镜像已上传/注册，v8 增加并发平台连接重试、启动阶段 challenge/target 等待限时回退与 download 恢复；平台试运行由用户执行，尚无正式比赛 entry/榜单成绩、题包审核或平台接受记录。**规则与未确认事项见 [规则审计](docs/rules-audit.md) 和 [规则询问清单](docs/rules-request.md)，求解器能力映射见 [solver skills](docs/solver-skills.md)，工具链见 [toolchain](docs/toolchain.md)，实测证据见 [验证记录](docs/verification.md) 和 [靶题实验记录](docs/lab-experiments.md)。
 
 ## 最快本地启动
 
@@ -22,7 +24,7 @@ python scripts/run_local.py
 - `author/controller.py`：赛时出题流程（生成/复用 → 本地检查 → 确定性打包 → 可选上传 → 只读轮询）；默认 dry-run。
 - `scripts/run_lab.py`：固定 dev/validation 预算的完整靶题联调入口；`--llm-env-file` 可加载本地 LLM_* 文件（值不回显）。
 - `scripts/platform_flow.py`：镜像注册、probe、状态读取和独立 agent entry 的安全流程；默认 dry-run。
-- `tests/`：不接触真实平台的契约、靶题、抓取会话、MCP、出题/参赛流程测试（当前 149 项；Windows 4 项 skip，镜像内 3 项 skip）。
+- `tests/`：不接触真实平台的契约、靶题、抓取会话、MCP、出题/参赛流程测试（当前 153 项；Windows 4 项 skip，镜像内 3 项 skip）。
 - `examples/dry-run/`、`scripts/run_local.py`：无需凭据的本地入口检查。
 - `scripts/check_web_tools.py`、`scripts/check_toolchain.py`：镜像内基础 Web 工具/完整工具链检查。
 - `_research/ctfy/`、`_research/repos/`：公开标准与参考项目快照，不是运行代码，也不是权威实时规则。
@@ -36,7 +38,7 @@ python scripts/run_local.py
 Windows（当前开发机）：
 
 ```powershell
-python -X utf8 -m unittest discover -s tests -v          # 149 项，OK (skipped=4)
+python -X utf8 -m unittest discover -s tests -v          # 153 项，OK (skipped=4)
 python -X utf8 scripts/run_local.py                      # 入口/dry-run 契约
 python -X utf8 scripts/run_lab.py --model fake --set dev # 靶题 + 假模型 3/3
 python -X utf8 scripts/run_lab.py --model real --set validation  # 无 LLM_* 时 blocked，不伪造
@@ -80,7 +82,7 @@ python3 author/prepare.py --smoke-runs 2
 ## 下一阶段
 
 1. **真实模型实验（已完成）**：DeepSeek `deepseek-flash` 在 validation/SQLi/XSS/Pwn/SSRF/AI-MCP/MCP 穿越 7 个 set 上均 3/3；凭据只在本机 gitignored `artifacts/llm.env`。下一步是用真实平台模型/额度重复。
-2. **平台流程**：`scripts/platform_flow.py` 与 `author/controller.py` 默认 dry-run；真实镜像注册/probe/entry/题包上传需要账号 token、运营方审核与赛道规则授权，当前均未发生。
+2. **平台流程**：10 月 28 日记录为镜像已上传并注册、等待人工审核；尚无正式平台 entry/解题成绩。出题包上传仍未发生，最新状态应在平台复核，见 [上传记录](docs/platform-upload.md)。
 3. **赛道规则**：附件仍未取得；按 [规则询问清单](docs/rules-request.md) 向组委会确认模型额度、运行限制、镜像截止、出题计分/窗口与 entry/奖项归属。
 4. **镜像固定**：当前基础镜像为浮动 `python:3.11-slim`，赛前建议按 digest 固定；真实模型/平台验证后再做最终重建。
 
@@ -107,7 +109,7 @@ python3 author/prepare.py --smoke-runs 2
 
 Linux shell 使用环境变量允许列表，只保留运行需要的 PATH、语言和临时目录等变量，不继承平台或模型密钥；超时和命令结束时清理该命令进程组，限制实际采集的 stdout/stderr 字节数。结果和事件记录会按已知密钥值脱敏。**环境过滤不是进程隔离**：同容器内的 `/proc`、共享文件和网络权限仍由运行环境决定，不能把此措施解释为密钥或目标范围的完整防护。HTTP 请求的总预算可令调用方及时返回；极慢的后台请求线程可能晚些才退出，故超时后的 POST 按“结果不确定”处理，不自动重试。正式使用前仍需授权靶题与比赛平台联调。
 
-镜像在构建期安装 Web/Pwn/AI 安全工具链（pwntools、gdb、r2、one_gadget、seccomp-tools、sqlmap、ffuf、nuclei、Chromium、mcp 等），版本清单保存在 `/app/tool-versions.txt`；评测期不下载软件。当前已有**镜像内** 149 项测试与 SQLi/XSS/Pwn/AI-MCP（含 read_file 工具穿越）/SSRF 分类靶题闭环；**真实 DeepSeek `deepseek-flash` 在本地 validation/SQLi/XSS/Pwn/SSRF/AI-MCP/MCP 穿越 7 个 set 上均 3/3**（`labs/` 仍是进程级隔离，不是容器级；mock 平台不是真实 CTFy）。真实平台注册/审核/接受答案仍未发生；这些能力与正式赛道细则仍是后续工作。
+镜像在构建期安装 Web/Pwn/AI 安全工具链（pwntools、gdb、r2、one_gadget、seccomp-tools、sqlmap、ffuf、nuclei、Chromium、mcp 等），版本清单保存在 `/app/tool-versions.txt`；评测期不下载软件。当前已有**镜像内** 153 项测试与 SQLi/XSS/Pwn/AI-MCP（含 read_file 工具穿越）/SSRF 分类靶题闭环；**真实 DeepSeek `deepseek-flash` 在本地 validation/SQLi/XSS/Pwn/SSRF/AI-MCP/MCP 穿越 7 个 set 上均 3/3**（`labs/` 仍是进程级隔离，不是容器级；mock 平台不是真实 CTFy）。CTFy 镜像已上传/注册，v8 增加并发平台连接重试、启动阶段 challenge/target 等待限时回退与 download 恢复；正式比赛 entry/榜单成绩仍未发生，规则附件/队伍审核仍是后续工作。
 
 ## 评测约束
 
