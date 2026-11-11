@@ -327,7 +327,9 @@ class LoopHardeningTests(unittest.TestCase):
         ])
         result = self._run(model, _Platform(), max_turns=4)
         self.assertEqual(result["format_errors"], 1)
-        self.assertEqual(result["turns"], 2)
+        # A malformed reply gets a bounded extra attempt; only real actions
+        # consume the action-turn budget.
+        self.assertEqual(result["turns"], 1)
         self.assertEqual(result["stop_reason"], "model_finished")
         self.assertEqual(result["tool_calls_made"], 0)
         # The retry prompt contains the corrective feedback, not a silent swallow.
@@ -342,7 +344,7 @@ class LoopHardeningTests(unittest.TestCase):
         result = self._run(model, _Platform(), max_turns=8)
         self.assertEqual(result["format_errors"], MAX_CONSECUTIVE_FORMAT_ERRORS)
         self.assertEqual(result["stop_reason"], "format_error_limit")
-        self.assertEqual(result["turns"], MAX_CONSECUTIVE_FORMAT_ERRORS)
+        self.assertEqual(result["turns"], 0)
         self.assertFalse(result["fully_solved"])
 
     def test_repeated_action_warns_then_executes(self):

@@ -119,7 +119,11 @@ class Platform:
                     raise PlatformError(0, "mutation_outcome_unknown") from None
                 raise
             except (urllib.error.URLError, TimeoutError, ConnectionError,
-                    http.client.HTTPException, ssl.SSLError) as exc:
+                    http.client.HTTPException, ssl.SSLError, OSError) as exc:
+                # OSError covers socket-level refusals that are neither URLError
+                # nor ConnectionError on Windows (WinError 10013 surfaces as
+                # PermissionError). Without it such a read escaped as an opaque
+                # internal_error instead of a retryable network_error.
                 wait = min(2 ** attempt, 16)
                 # RemoteDisconnected is a ConnectionResetError, not a
                 # URLError: it used to escape as an uncaught internal_error
@@ -199,7 +203,7 @@ class Platform:
             # deadline, not become an indistinguishable network error.
             raise
         except (urllib.error.URLError, TimeoutError, ConnectionError,
-                http.client.HTTPException, ssl.SSLError):
+                http.client.HTTPException, ssl.SSLError, OSError):
             raise PlatformError(0, "network_error") from None
 
 
