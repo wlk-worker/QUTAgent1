@@ -127,7 +127,21 @@ python scripts/run_lab.py --model real --set pwn \
 | `LLM_BASE_URL` | 平台/供应商模型网关地址 |
 | `CTFY_WORK_DIR` | 工作目录，默认 `/ctfy/work` |
 
-Agent 会写 `result.json`，正常退出码为 `0`。
+Agent 会写 `result.json`（`schema_version: 3`），正常退出码为 `0`。
+
+CTFY-0001 v3 的几个关键点：
+
+- 平台**已经启动 target**，`task.json.target_instance` 已存在；不要调用 `POST /api/v1/instances`；
+- target 地址在 `target_endpoints`；单 Web endpoint 还会提供 `CTFY_TARGET_URL`；
+- challenge 附件已在 `/ctfy/work/attachments/`；`download` 会优先使用本地文件；
+- 平台可能在同一工作目录重启最多 5 轮，每轮重新写 `result.json`。
+
+最终校准镜像：
+
+```text
+registry.ctfy.io/9c401d0f-7eef-4a29-ad02-bb66841ec0c6/qutagent:v1-final
+sha256:8c56c976909c74d5b27af85835eb798b0b699eb725fe089fd9782951c6bedbec
+```
 
 构建 `linux/amd64` 镜像并推送到平台 registry：
 
