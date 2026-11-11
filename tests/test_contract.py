@@ -10,7 +10,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from agent.contract import Task, write_result
-from agent.loop import run
+from agent.loop import _service_origins, run
 from agent.main import _working_time
 from agent.model import Model, ModelError
 from agent.platform import Platform, PlatformError, Paused, _retry_seconds
@@ -98,7 +98,7 @@ class ContractTests(unittest.TestCase):
             task = Task.load({"CTFY_WORK_DIR": str(root), "CTFY_EVAL_DRY_RUN": "1"})
             self.assertTrue(task.dry_run)
             write_result(root, {"stop_reason": "dry_run"})
-            self.assertEqual(json.loads((root / "result.json").read_text())["schema_version"], 2)
+            self.assertEqual(json.loads((root / "result.json").read_text())["schema_version"], 3)
             self.assertEqual(list(root.glob(".result-*.json")), [])
 
     def test_missing_model_key_fails_closed(self):
@@ -257,6 +257,62 @@ class ContractTests(unittest.TestCase):
                             opener=Opener(), clock=lambda: 0, sleep=lambda n: self.fail("should not wait"))
         with self.assertRaises(Paused):
             platform.challenge("C-1")
+
+    def test_target_endpoints_feed_http_scope(self):
+        with tempfile.TemporaryDirectory() as temp:
+            task = Task(Path(temp), {
+                "schema_version": 3,
+                "target_endpoints": [{"type": "http", "url": "http://target.test:8080"}],
+                "scope": [],
+            }, "", "C-1", "", "instance", False)
+            self.assertIn("http://target.test:8080", _service_origins(task, None))
+
+    def test_local_attachment_is_used_before_platform(self):
+        class NoDownloadPlatform(FakePlatform):
+            def download_attachment(self, *args, **kwargs):
+                raise AssertionError("platform download should not be called")
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            attachment = root / "attachments" / "vuln"
+            attachment.parent.mkdir(parents=True)
+            attachment.write_bytes(b"ELF")
+            task = Task(root, {
+                "schema_version": 3,
+                "challenge": {"id": "C-1"},
+                "questions": [{"id": "flag"}],
+                "attachments": [{"name": "vuln", "path": str(attachment)}],
+            }, "", "C-1", "", "instance", False)
+            model = FakeModel([
+                {"action": "download", "name": "vuln"},
+                {"action": "finish", "reason": "local file checked"},
+            ])
+            result = run(task, NoDownloadPlatform(), model, max_turns=2,
+                         deadline=10**12, on_update=lambda value: None,
+                         command_tool=lambda command, cwd: {"exit_code": 0, "stdout": ""})
+            self.assertEqual(result["tool_calls_made"], 1)
+
+    def test_browse_action_uses_headless_helper_and_scope(self):
+        with tempfile.TemporaryDirectory() as temp:
+            task = Task(Path(temp), {
+                "schema_version": 3,
+                "challenge": {"id": "C-1"},
+                "questions": [{"id": "flag"}],
+                "scope": ["http://target.test"],
+            }, "", "C-1", "", "instance", False)
+
+            def command_tool(command, cwd):
+                self.assertIn("ctf-browse", command)
+                return {"exit_code": 0, "stdout": '{"title":"Observed"}'}
+
+            model = FakeModel([
+                {"action": "browse", "url": "http://target.test/"},
+                {"action": "finish", "reason": "observed"},
+            ])
+            result = run(task, FakePlatform(), model, max_turns=2,
+                         deadline=10**12, on_update=lambda value: None,
+                         command_tool=command_tool)
+            self.assertEqual(result["tool_calls_made"], 1)
 
     def test_challenge_failure_falls_back_to_task_briefing(self):
         class FailingChallengePlatform(FakePlatform):

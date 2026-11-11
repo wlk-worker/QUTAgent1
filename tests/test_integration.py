@@ -81,7 +81,7 @@ class IntegrationTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 (root / "task.json").write_text(json.dumps({
-                    "schema_version": 2, "run_mode": "instance", "challenge": {"id": "C-1"},
+                    "schema_version": 3, "run_mode": "instance", "challenge": {"id": "C-1"},
                     "competition_id": "event", "questions": [{"id": "flag", "prompt": "Find the token"}],
                     "max_turns": 3,
                 }))
@@ -117,7 +117,7 @@ class IntegrationTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 (root / "task.json").write_text(json.dumps({
-                    "schema_version": 2, "run_mode": "qa", "challenge": {"id": "C-1"},
+                    "schema_version": 3, "run_mode": "qa", "challenge": {"id": "C-1"},
                     "competition_id": "event", "max_turns": 3,
                 }))
                 address = f"http://127.0.0.1:{server.server_port}"

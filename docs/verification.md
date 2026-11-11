@@ -22,7 +22,7 @@
 
 ## 2026-10-23 入口复核
 
-- Windows `python -X utf8 scripts/run_local.py`：进程退出 0，输出 `schema_version: 2`、`stop_reason: dry_run` 的 `result.json`。脚本使用合成任务与临时目录，不访问真实平台。
+- Windows `python -X utf8 scripts/run_local.py`：进程退出 0，输出 `schema_version: 3`、`stop_reason: dry_run` 的 `result.json`。脚本使用合成任务与临时目录，不访问真实平台。
 - Windows `python -X utf8 -m unittest discover -s tests -v`：14/14 通过；为兼容当前隔离式 Python 发行版，在测试入口显式加入仓库根目录。测试中的模拟 HTTPError 有清理提示，不影响结果。
 - WSL `docker build --pull=false --platform linux/amd64 -t qutagent:dev .`：当前源码重新构建成功，本地 image ID `bb751f81c1eb`。
 - WSL `/home/agentfuzz/qutagent-ctfy-venv/bin/ctfy agent check qutagent:dev --json`：重新构建后的镜像为 `passed`、`ran_locally: true`、0 findings。CLI 说明 registry manifest 返回 401，因此检查的是本地镜像；不代表已注册到比赛。
@@ -31,7 +31,7 @@
 
 - G0：公开规则审计及未知项记录已完成；赛道附件仍未找到，已整理可直接发送的 [规则询问清单](rules-request.md)。
 - G1：本地构建、dry run 与官方 `agent check` 已通过。
-- G2：Windows 全量测试 **155 项 OK（4 skip：2 个 Linux-only + Windows Pwn/XSS 用例）**；镜像内 Linux 全量测试 **155/155（3 skip）**，Pwn 与 XSS（Playwright admin bot）端到端在镜像内执行。包含契约/可靠性/靶题/HTTP 会话/MCP/skills/分类靶题/出题/参赛流程测试。模拟 HTTP 与 mock MCP 不是平台验证。
+- G2：Windows 全量测试 **158 项 OK（4 skip：2 个 Linux-only + Windows Pwn/XSS 用例）**；镜像内 Linux 全量测试 **158/158（3 skip）**，Pwn 与 XSS（Playwright admin bot）端到端在镜像内执行。包含契约/可靠性/靶题/HTTP 会话/MCP/skills/分类靶题/出题/参赛流程测试。模拟 HTTP 与 mock MCP 不是平台验证。
 - G3：**已运行**分类靶题假模型闭环：SQLi（Windows 3/3）、MCP/AI（Windows 3/3）、MCP `read_file` 工具目录穿越（Windows/镜像 3/3）、SSRF 弱 denylist 绕过（Windows/镜像 3/3）、Pwn（镜像内 3/3）、XSS 反射+admin bot（镜像内 3/3）及原路径穿越（Windows/镜像 3/3），mock 平台均接受动态 flag。**真实 DeepSeek `deepseek-flash` 也已在本地合成靶题上完成 7 个 set 全部 3/3**（validation/SQLi/XSS/Pwn/SSRF/AI-MCP/MCP 穿越）；证据见下节。边界：mock 平台不是真实 CTFy，**没有真实平台接受记录**。
 - G4：出题包生成/审计/smoke 的本地证据仍在；`author/controller.py` 和 `scripts/platform_flow.py` 默认 dry-run、mock 契约测试通过；**未上传、未审核、未注册、未创建 entry**。
 - G5：固定 dev/validation 种子集与预算仍有效；**真实 DeepSeek 对照已运行**（validation 3/3、SQLi 3/3、XSS 3/3、Pwn 3/3、SSRF 3/3、AI-MCP 3/3、MCP 穿越 3/3），预算在真实运行中为 180–300s / 10–16 turns / 10–16 requests。
@@ -51,7 +51,7 @@
 
 | 验证 | 实际结果 | 边界 |
 |---|---|---|
-| Windows `python -X utf8 -m unittest discover -s tests -v` | 当轮历史快照：24 项执行，22 通过、2 跳过（Linux 命令及其入口）；退出 0；最新全量为 155 项，见下节 | 含状态、假密钥、短预算、慢响应、请求上限、POST 不确定结果 |
+| Windows `python -X utf8 -m unittest discover -s tests -v` | 当轮历史快照：24 项执行，22 通过、2 跳过（Linux 命令及其入口）；退出 0；最新全量为 158 项，见下节 | 含状态、假密钥、短预算、慢响应、请求上限、POST 不确定结果 |
 | WSL `python3 -m unittest discover -s tests -v` | 24/24 通过，退出 0 | Linux 进程组、命令输出上限和模拟 HTTP 闭环已执行；仍不等于真实靶题解题 |
 | Windows `python -X utf8 scripts/run_local.py` | `dry_run`、`fully_solved:false`，退出 0 | 入口/文件契约检查 |
 | WSL `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` | 成功；本地 image ID `sha256:20e17c0933e13d3dc04d41599f22a56f433710e7b363b68507e8563f8371a3b3` | 构建期下载 apt 软件包；评测期无需下载 |
@@ -81,9 +81,9 @@
 
 | 验证 | 实际结果 | 证据等级与边界 |
 |---|---|---|
-| Windows 全量测试 | `python -X utf8 -m unittest discover -s tests -v` → **Ran 155 tests, OK (skipped=4)** | 代码/契约/本地闭环；新增 64 项 skills/loop/HTTP/MCP（含 MCP auth header）+ 21 项 SQLi/MCP/Pwn/XSS/MCP 穿越/SSRF 分类靶题 |
-| 镜像内全量测试 | `docker run --rm --user root -v "$PWD:/repo" -w /repo --entrypoint python qutagent:dev -X utf8 -m unittest discover -s tests -v` → **Ran 155 tests, OK (skipped=3)** | Linux 镜像内执行，Pwn/XSS 端到端实际运行；仍不是平台/真实模型验证 |
-| 镜像工具链构建 | `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` → 成功，完整 **1078 s** + `ctf-browse`/skills/MCP auth 增量重建，镜像 `sha256:8b3f10aa…`，内容 `943,226,526` B ≈ 0.88 GiB，磁盘 3.57 GB | 构建期联网安装；评测期离线 |
+| Windows 全量测试 | `python -X utf8 -m unittest discover -s tests -v` → **Ran 158 tests, OK (skipped=4)** | 代码/契约/本地闭环；新增 64 项 skills/loop/HTTP/MCP（含 MCP auth header）+ 21 项 SQLi/MCP/Pwn/XSS/MCP 穿越/SSRF 分类靶题 |
+| 镜像内全量测试 | `docker run --rm --user root -v "$PWD:/repo" -w /repo --entrypoint python qutagent:dev -X utf8 -m unittest discover -s tests -v` → **Ran 158 tests, OK (skipped=3)** | Linux 镜像内执行，Pwn/XSS 端到端实际运行；仍不是平台/真实模型验证 |
+| 镜像工具链构建 | `docker build --pull=false --platform linux/amd64 -t qutagent:dev .` → 成功，完整 **1078 s** + `ctf-browse`/skills/MCP auth 增量重建，镜像 `sha256:8c56c976…`，内容 `943,232,739` B ≈ 0.88 GiB，磁盘 3.57 GB | 构建期联网安装；评测期离线 |
 | 工具链 required 检查 | `docker run --rm --entrypoint python qutagent:dev /app/scripts/check_toolchain.py` → exit 0，`verdict: passed`，**required_failed: []**，`optional_failed: ["import:angr"]` | 66 项检查；angr 为已知 optional 缺失 |
 | 离线检查 | 同上加 `--network none` → exit 0 / passed | 运行期工具链不依赖网络 |
 | 官方本地镜像检查 | `ctfy agent check qutagent:dev --json` → `verdict: passed`、`ran_locally: true`、`findings: []` | CTFY-0001 本地 dry run；不是平台审核 |
@@ -146,9 +146,17 @@
   超时后用 task.json 的 questions/target_services 构造最小 info，继续进入模型
   循环；
 - v9 增强解题能力：`http` 支持 `save_as` 保存二进制、压缩保留 flag 证据、
-  新增 Solving protocol、默认轮数 96、单轮模型预算 3000；最终推送
-  `sha256:8b3f10aa…`，平台注册/试运行由用户执行；
-- 这是**个人测评**入口，页面明确与官方认证结果分层；不是正式比赛 entry/榜单；
+  新增 Solving protocol、默认轮数 96、单轮模型预算 3000；
+- v10 / v1-final 按 2026-11-10 规则 v2.5 和 CTFY-0001 schema v3 补充：
+  result schema 3、`target_endpoints`/`CTFY_TARGET_URL`、本地 attachments、
+  不调用平台 `POST /instances`；新增 `browse` action；最终镜像
+  `qutagent:v1-final`，digest `sha256:8c56c976…`；
+- 最终本地校准（真实 DeepSeek，镜像内）：
+  - validation / web-sqli / ssrf / ai-mcp / ai-mcp-traversal：各 **3/3**；
+  - pwn：**3/3**（24 轮预算）；
+  - xss：**3/3**（32 轮预算；24 轮时模型自测消耗过多，说明本地预算设置会影响该题）；
+  - Windows 与镜像内均为 **158 项测试 OK**（分别 skip 4/3）；
+- 这是**个人测评/本地合成靶题**结果，不是正式比赛成绩；平台注册/试运行由用户执行；
 - 正式平台 entry、队伍审核、规则附件仍未完成。
 
-结论：镜像与求解器的**本地可用性**已显著增强（分类 playbook、格式纠错、循环检测、历史压缩、Cookie 会话、同源重定向、MCP、Pwn/Web/AI 工具链），并通过 required 检查与镜像内测试；**真实 DeepSeek 在本地合成靶题上 7 个 set 全部 3/3**。CTFy 镜像已上传/注册/自动准入，v3 试跑已发生真实模型调用；v9 增加并发平台连接重试、启动阶段 challenge/target 等待限时和 task.json 回退，并增强二进制保存、证据保留和解题协议；平台注册/试运行由用户执行；**试跑最终成绩、正式平台 entry/成绩、赛道规则附件**仍未完成。
+结论：镜像与求解器的**本地可用性**已显著增强（分类 playbook、格式纠错、循环检测、历史压缩、Cookie 会话、同源重定向、MCP、Pwn/Web/AI 工具链），并通过 required 检查、schema v3 契约和镜像内测试；**真实 DeepSeek 在本地 7 个 set 上均 3/3**。CTFy 镜像已上传/注册/自动准入，v3 试跑已发生真实模型调用；v10/v1-final 补齐规则 v3 契约并增强浏览器/DOM、二进制保存、证据保留和启动稳定性；**正式平台成绩、entry/榜单、规则附件**仍未完成。

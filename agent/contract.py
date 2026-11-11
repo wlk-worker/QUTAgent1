@@ -46,7 +46,7 @@ def write_result(work_dir: Path, result: dict[str, Any]) -> Path:
     """Make every visible result a complete JSON object, even on interruption."""
     work_dir.mkdir(parents=True, exist_ok=True)
     target = work_dir / "result.json"
-    payload = json.dumps(scrub({"schema_version": 2, **result}), ensure_ascii=False, separators=(",", ":"))
+    payload = json.dumps(scrub({"schema_version": 3, **result}), ensure_ascii=False, separators=(",", ":"))
     fd, tmp_name = tempfile.mkstemp(prefix=".result-", suffix=".json", dir=work_dir)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:

@@ -133,7 +133,7 @@ localhost，因此在发出请求前就拒绝了。平台页面“检查密钥�
 - v5 推送 `qutagent:v5`，registry digest `sha256:6ea42fc6…`；
 - v6 推送 `qutagent:v6`，registry digest `sha256:6fed20eb…`；
 - v7 推送 `qutagent:v7`，registry digest `sha256:7ef94cc7…`；
-- 最终 v8 推送 `qutagent:v8`，registry digest `sha256:8b3f10aa…`；
+- v8 推送 `qutagent:v8`，registry digest `sha256:e857067d…`；
 - 40 题全量 CYBENCH 中大量“未调用到模型”的某条结果：
   `stop_reason=internal_error, error_code=RemoteDisconnected`，发生在
   `platform.challenge()` 之前，属于平台 API 连接被重置；旧 `Platform.request`
@@ -183,11 +183,28 @@ v7 修复：
 - 新增 Solving protocol：多轮调查、每次 `why` 说明假设和预期信号、失败后
   换技术、禁止在还有未尝试方案时过早 `finish`；
 - 默认最大轮数从 64 提升到 96，模型单轮输出预算从 2400 提升到 3000；
-- 最终镜像 `qutagent:v9`，registry digest `sha256:8b3f10aa…`。
+- v9 镜像 `qutagent:v9`，registry digest `sha256:8b3f10aa…`。
+
+### v10 / v1-final：规则 v3 与最终校准
+
+- 按 2026-11-10 的赛事规则 v2.5 和 CTFY-0001 schema v3 补充：
+  - result 写 `schema_version:3`；
+  - 使用 `target_endpoints` + `CTFY_TARGET_URL`；
+  - `attachments` 已在 `/ctfy/work/attachments/` 时直接使用本地文件；
+  - 不在有 target_instance 时调用 `POST /instances`；
+  - 回合/多轮工作目录兼容；
+- 新增 `browse` action（headless Chromium/DOM/console），`http save_as` 保存二进制；
+- 历史压缩保留 flag 证据；新增 Solving protocol；默认 96 轮 / 3000 tokens；
+- 最终镜像：
+
+```text
+registry.ctfy.io/9c401d0f-7eef-4a29-ad02-bb66841ec0c6/qutagent:v1-final
+sha256:8c56c976909c74d5b27af85835eb798b0b699eb725fe089fd9782951c6bedbec
+```
 
 ### 当前状态
 
-- 镜像 v9 已上传；平台注册/试运行由用户执行；v3 已自动准入并跑过 3 题试跑；
+- 镜像 v1-final 已上传；平台注册/试运行由用户执行；v3 已自动准入并跑过 3 题试跑；
 - 尚未拿到全量成绩；
 - `/evals/new` 是**个人测评**，页面明确与官方认证结果分层；
 - 正式比赛 entry、队伍审核、规则附件仍未完成。

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -27,7 +28,7 @@ except ImportError:  # direct entrypoint /app/agent/main.py
     from agent.mcp import MCPClient
 
 
-VALID_ACTIONS = {"shell", "http", "submit", "refresh", "download", "finish", "mcp"}
+VALID_ACTIONS = {"shell", "http", "browse", "submit", "refresh", "download", "finish", "mcp"}
 
 # Bounds borrowed from the reference projects (see docs/solver-skills.md):
 # SWE-agent's Last5Observations keeps recent tool evidence and compresses older
@@ -47,6 +48,7 @@ platform/author files. Submit an answer only with concrete evidence; wrong guess
 Return exactly one JSON object per turn, with one of these shapes:
 {"action":"shell","command":"...","why":"..."}
 {"action":"http","method":"GET|POST","url":"http://host:port/path","body":{},"headers":{},"save_as":"downloads/name.bin","why":"..."}
+{"action":"browse","url":"http://host:port/path","wait_ms":800,"full":false,"why":"..."}
 {"action":"mcp","url":"http://host:port/mcp","op":"list_tools|call","tool":"name","arguments":{},"headers":{},"why":"..."}
 {"action":"submit","question_id":"flag","answer":"...","evidence":"..."}
 {"action":"refresh"}
@@ -176,6 +178,9 @@ def _service_origins(task, info: dict | None) -> list[str]:
             add_service(service)
         for service in container.get("target_services") or []:
             add_service(service)
+        # CTFY-0001 v3 publishes the target's player-visible addresses here.
+        for service in container.get("target_endpoints") or []:
+            add_service(service)
         attack = container.get("attack_surface")
         if isinstance(attack, dict):
             for service in attack.get("services") or []:
@@ -185,6 +190,9 @@ def _service_origins(task, info: dict | None) -> list[str]:
                 add(entry.get("url"))
             else:
                 add(entry)
+    # v3 supplies the single web endpoint directly; it is authoritative for
+    # tasks whose task.json has not yet filled target_endpoints.
+    add(os.environ.get("CTFY_TARGET_URL", ""))
     return sorted(origins)
 
 
@@ -211,9 +219,15 @@ def _brief(task, instance: dict | None, challenge: dict, category: str | None = 
         "gated_questions": task.raw.get("gated_questions"),
         "scope": task.raw.get("scope", []),
         "rules_of_engagement": task.raw.get("rules_of_engagement", []),
-        "target_services": (instance or {}).get("services") or ((instance or {}).get("attack_surface") or {}).get("services", []),
+        "target_services": ((instance or {}).get("services")
+                            or (instance or {}).get("target_services")
+                            or task.raw.get("target_services")
+                            or task.raw.get("target_endpoints", [])),
+        "target_endpoints": ((instance or {}).get("target_endpoints")
+                             or task.raw.get("target_endpoints", [])),
         "http_origin_scope": _service_origins(task, instance),
-        "attachments": (instance or {}).get("attachments", []),
+        "attachments": ((instance or {}).get("attachments")
+                        or task.raw.get("attachments", [])),
     }
     return json.dumps(selected, ensure_ascii=False)[:30_000]
 
@@ -505,6 +519,37 @@ def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Ca
                             save_to=save_to)
                         result["tool_calls_made"] += 1
                         result["http_calls"] += 1
+            elif kind == "browse":
+                url = str(action.get("url") or "")
+                try:
+                    origin = normalize_origin(url)
+                except ValueError:
+                    origin = ""
+                if origin not in allowed_origins:
+                    observation = {"error": "browse_origin_not_allowed", "origin": origin}
+                    result["tool_calls_made"] += 1
+                else:
+                    try:
+                        wait_ms = max(0, min(int(action.get("wait_ms") or 800), 10_000))
+                    except (TypeError, ValueError):
+                        wait_ms = 800
+                    command = " ".join([
+                        "ctf-browse", shlex.quote(url), "--wait-ms", str(wait_ms),
+                        "--max-chars", "12000",
+                    ] + (["--full"] if action.get("full") else []))
+                    if command_tool is shell:
+                        raw = command_tool(command, task.work_dir, deadline=deadline)
+                    else:
+                        raw = command_tool(command, task.work_dir)
+                    result["tool_calls_made"] += 1
+                    if isinstance(raw, dict):
+                        stdout = raw.get("stdout") or ""
+                        try:
+                            observation = {"browse": json.loads(stdout)}
+                        except (TypeError, ValueError):
+                            observation = raw
+                    else:
+                        observation = {"browse_raw": str(raw)[:14_000]}
             elif kind == "mcp":
                 if not allowed_origins:
                     observation = {"error": "http_scope_empty"}
@@ -544,28 +589,44 @@ def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Ca
                 observation = {"challenge": challenge, "pending": pending_questions(info) if info is not None else qa_questions(task, challenge, set(result["solved"]))}
             elif kind == "download":
                 name = str(action.get("name") or "")
-                try:
-                    raw = platform.download_attachment(task.challenge_id, name, instance_id)
-                except PlatformError as exc:
-                    # A target file such as /nettools is not a platform
-                    # attachment. Return an observation instead of aborting the
-                    # run so the model can retry with http/shell.
-                    observation = {
-                        "error": "attachment_unavailable",
-                        "status": exc.code,
-                        "hint": "download is only for platform attachments; "
-                                "use http GET or shell curl for target files",
-                    }
+                local_path = None
+                for attachment in task.raw.get("attachments") or []:
+                    if not isinstance(attachment, dict) or str(attachment.get("name")) != name:
+                        continue
+                    candidate = attachment.get("path")
+                    if isinstance(candidate, str) and candidate:
+                        resolved = Path(candidate).resolve()
+                        if resolved.is_relative_to(task.work_dir) and resolved.is_file():
+                            local_path = resolved
+                    break
+                if local_path is not None:
                     result["tool_calls_made"] += 1
+                    observation = {"saved_to": str(local_path),
+                                   "bytes": local_path.stat().st_size,
+                                   "local_attachment": True}
                 else:
-                    destination = (task.work_dir / "attachments" / name).resolve()
-                    root = (task.work_dir / "attachments").resolve()
-                    if not destination.is_relative_to(root):
-                        raise ValueError("attachment path escapes work directory")
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    destination.write_bytes(raw)
-                    result["tool_calls_made"] += 1
-                    observation = {"saved_to": str(destination), "bytes": len(raw)}
+                    try:
+                        raw = platform.download_attachment(task.challenge_id, name, instance_id)
+                    except PlatformError as exc:
+                        # A target file such as /nettools is not a platform
+                        # attachment. Return an observation instead of aborting the
+                        # run so the model can retry with http/shell.
+                        observation = {
+                            "error": "attachment_unavailable",
+                            "status": exc.code,
+                            "hint": "download is only for platform attachments; "
+                                    "use http GET or shell curl for target files",
+                        }
+                        result["tool_calls_made"] += 1
+                    else:
+                        destination = (task.work_dir / "attachments" / name).resolve()
+                        root = (task.work_dir / "attachments").resolve()
+                        if not destination.is_relative_to(root):
+                            raise ValueError("attachment path escapes work directory")
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        destination.write_bytes(raw)
+                        result["tool_calls_made"] += 1
+                        observation = {"saved_to": str(destination), "bytes": len(raw)}
             else:
                 qid = str(action.get("question_id") or ("answer" if task.run_mode == "qa" else "flag"))
                 answer = action.get("answer")

@@ -45,7 +45,7 @@ def main() -> int:
             return 1
         result = json.loads(result_path.read_text(encoding="utf-8"))
         print(json.dumps(result, ensure_ascii=False, indent=2))
-        if completed.returncode != 0 or result.get("schema_version") != 2 or result.get("stop_reason") != "dry_run":
+        if completed.returncode != 0 or result.get("schema_version") != 3 or result.get("stop_reason") != "dry_run":
             print("dry-run contract check failed", file=sys.stderr)
             return 1
         print("Local dry run passed. This does not validate a real challenge or image registration.")

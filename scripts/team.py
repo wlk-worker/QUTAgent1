@@ -93,7 +93,7 @@ def image_dry_run(image):
                  "--mount", f"type=bind,src={work},dst=/ctfy/work",
                  "--env", "CTFY_EVAL_DRY_RUN=1", image], timeout=60)
         result = json.loads((work / "result.json").read_text(encoding="utf-8"))
-        if result.get("schema_version") != 2 or result.get("stop_reason") != "dry_run":
+        if result.get("schema_version") != 3 or result.get("stop_reason") != "dry_run":
             raise RuntimeError("Image dry-run returned an unexpected result.")
         print("image_dry_run_passed", flush=True)
     finally:
