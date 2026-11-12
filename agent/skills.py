@@ -269,8 +269,16 @@ Confirm each bug class with a differential before exploiting:
   script is filtered, try a small `img onerror` fetcher but still send the
   cookie, not just a marker. Do not spend the whole budget probing CSP.
   Blind XSS needs an out-of-band sink.
-- SSRF: aim URL-like parameters at the supplied internal service names; confirm
-  by response content or timing. Never scan networks outside the scope.
+- SSRF / URL fetch: aim URL-like parameters at the supplied internal service
+  names; confirm by response content or timing. Once a fetch parameter returns
+  content you chose (an internal page, a `file://` read, a loopback port), the
+  channel is proven: switch to flag acquisition immediately. Read the flag path
+  named in the briefing or README first; if it is unknown, read the paths that
+  reveal it (`/proc/self/cmdline`, `/proc/self/environ`, the app's
+  `package.json`, `.env` and entrypoint source) plus the usual locations, then
+  submit the first complete flag with the exact request in `evidence`. Do not
+  return to general recon while the channel is open. Never scan networks
+  outside the scope.
 - Upload: identify extension/MIME/content checks, storage path and execution
   point; prove with a harmless marker file first.
 - SSTI: distinguish reflection from evaluation using arithmetic/string
@@ -365,16 +373,18 @@ Verification gate: reproduce the flag from the extracted artifact with a
 command you can cite in `evidence`."""
 
 QA_PLAYBOOK = """## Playbook: QA / knowledge questions
-1. Read the exact question, choices and required answer type (single string,
-   comma-separated list or JSON list). Answer with the exact choice text the
-   platform expects, not a paraphrase.
-2. Reason from the supplied briefing and public knowledge only; do not invent
-   platform state. If a question needs a platform check you cannot perform, use
-   `refresh` and explain the limitation instead of guessing.
-3. Provide concrete `evidence` for the reasoning (definition, cited fact or
-   observed state).
-Verification gate: submit only when the answer format matches the question
-exactly; a wrong guess can exhaust the attempt cap."""
+1. Read the exact question, its `mode` and its `choices`. For `single_select` submit exactly
+   one choice value from `choices` (e.g. "A"); for `multi_select` submit a JSON list of values
+   (e.g. ["A", "C"]). Never submit the option's full sentence when the choices are letters,
+   and never submit a value that is not in `choices`: the platform cannot grade it and the
+   attempt is lost.
+2. Reason from the supplied briefing and public knowledge only; do not invent platform state.
+   QA runs have no shell and no network, so a lookup is not available: if a question needs a
+   check you cannot perform, use `refresh` and explain the limitation instead of guessing.
+3. Provide concrete `evidence` for the reasoning (definition, cited fact or observed state).
+Verification gate: only a `verdict.correct == true` from the platform marks a question solved.
+Never report an answer as accepted, solved or correct unless a platform verdict said so, and
+never finish while an attempt is still unspent."""
 
 _PLAYBOOKS = {
     "web": WEB_PLAYBOOK,
@@ -447,6 +457,10 @@ FLAG_DISCIPLINE = """## Flag discipline
 - `evidence` is mandatory: name the request/tool call and quote the observed
   response fragment that contains the flag.
 - Do not brute force submissions; a wrong guess can exhaust the attempt cap.
+- The platform verdict is the only acceptance signal: `correct: true` (or a
+  refreshed `answered_correctly: true`) means accepted; `correct: false` means
+  rejected. Never claim, in `finish` or in your reasoning, that a submission was
+  accepted when the verdict said otherwise.
 - Never send platform or model credentials to a target and never include them
   in headers, answers or evidence."""
 

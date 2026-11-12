@@ -101,8 +101,14 @@ class ReliabilityTests(unittest.TestCase):
                 raise urllib.error.HTTPError(req.full_url, 429, "rate", {}, io.BytesIO())
         with self.assertRaises(BudgetExpired):
             Model("openai", "test", "http://localhost", "fake", opener=Opener(), deadline=time.monotonic()+.05).complete("s", [])
-        with self.assertRaisesRegex(ModelError, "model_request_limit"):
-            Model("openai", "test", "http://localhost", "fake", opener=Opener(), max_requests=1, sleep=lambda _:None).complete("s", [])
+        # ``max_requests`` caps logical completions; the same completion may use
+        # a bounded number of HTTP retries without consuming another turn.
+        model = Model("openai", "test", "http://localhost", "fake", opener=Opener(),
+                      max_requests=1, sleep=lambda _:None)
+        with self.assertRaises(ModelError):
+            model.complete("s", [])
+        self.assertEqual(model.logical_requests, 1)
+        self.assertLessEqual(model.requests, 4)
 
     def test_uncertain_mutation_is_reported_once(self):
         class Opener:

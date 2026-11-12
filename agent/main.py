@@ -59,6 +59,55 @@ def _model_hint() -> dict:
     }
 
 
+def _save(work_dir: Path, payload: dict, result: dict) -> None:
+    """Write ``result.json`` without letting a transient lock abort the run.
+
+    On Windows a synchronisation client (OneDrive, antivirus) can hold the
+    result file for a moment; ``os.replace`` then raises ``PermissionError``.
+    That used to escape from ``on_update`` and relabel an already accepted
+    submission as ``internal_error`` (SECQA-0148).
+    """
+    for attempt in range(3):
+        try:
+            write_result(work_dir, payload)
+            return
+        except OSError as exc:
+            result["save_errors"] = result.get("save_errors", 0) + 1
+            result["last_save_error"] = type(exc).__name__
+            if attempt == 2:
+                return
+            time.sleep(0.05 * (attempt + 1))
+
+
+def _finalize(result: dict, reason: str, *, code: str | None = None,
+              hint: dict | None = None) -> dict:
+    """Apply a terminal reason without overwriting a confirmed success.
+
+    ``stop_reason`` describes the *outcome*.  Once the platform has confirmed
+    the whole challenge the outcome is ``done``; whatever interrupted the
+    process afterwards is recorded as diagnostics (``terminal_error``), not as
+    the result.  Partial progress (some questions answered) is kept as-is and
+    still reported by ``solved``.
+    """
+    if result.get("fully_solved") is True:
+        result["stop_reason"] = "done"
+        if result.get("success_confirmed") is True and result.get("completion_basis") in (None, "", "unconfirmed"):
+            result["completion_basis"] = "platform_verdict"
+        terminal = {"reason": reason}
+        if code:
+            terminal["code"] = str(code)[:100]
+        result["terminal_error"] = terminal
+        if hint:
+            result["model_hint"] = hint
+        return result
+    result["stop_reason"] = reason
+    if code:
+        result["error_code"] = str(code)[:100]
+    if hint:
+        result["model_hint"] = hint
+    return result
+
+
 def main() -> int:
     try:
         task = Task.load()
@@ -71,7 +120,7 @@ def main() -> int:
     def save(value: dict) -> None:
         nonlocal result
         result = value.copy()
-        write_result(task.work_dir, result)
+        _save(task.work_dir, result, result)
 
     save(result)
     if task.dry_run:
@@ -95,24 +144,19 @@ def main() -> int:
         result = run(task, platform, model, max_turns=_turn_budget(task.raw), deadline=deadline,
                      on_update=save)
     except BudgetExpired:
-        result["stop_reason"] = "deadline"
-        result["model_hint"] = _model_hint()
+        _finalize(result, "deadline", hint=_model_hint())
     except KeyboardInterrupt:
-        result["stop_reason"] = "interrupted"
+        _finalize(result, "interrupted", code="KeyboardInterrupt")
     except Paused:
-        result["stop_reason"] = "competition_paused"
+        _finalize(result, "competition_paused", code="competition_paused")
     except PlatformError as exc:
-        result["stop_reason"] = "platform_error"
-        result["error_code"] = exc.code
+        _finalize(result, "platform_error", code=exc.code)
     except ModelError as exc:
-        result["stop_reason"] = "model_error"
-        result["error_code"] = str(exc)[:100]
-        result["model_hint"] = _model_hint()
+        _finalize(result, "model_error", code=str(exc), hint=_model_hint())
     except Exception as exc:
         # Failure class is useful for diagnosis; request bodies and secrets are not.
-        result["stop_reason"] = "internal_error"
-        result["error_code"] = type(exc).__name__
-    write_result(task.work_dir, result)
+        _finalize(result, "internal_error", code=type(exc).__name__)
+    _save(task.work_dir, result, result)
     return 0
 
 

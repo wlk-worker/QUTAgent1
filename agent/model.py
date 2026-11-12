@@ -73,6 +73,10 @@ class Model:
         self.output_tokens = 0
         self.deadline, self.max_requests, self.clock = deadline, max_requests, clock
         self.requests = 0
+        # Logical completion calls.  HTTP retries (429/network/empty reply) are
+        # bounded separately so a transient retry cannot consume the caller's
+        # whole per-run request budget (MMLU-CS-0021/0054/0100).
+        self.logical_requests = 0
 
     def _endpoint(self) -> str:
         suffix = "/chat/completions" if self.flavor == "openai" else "/messages"
@@ -82,6 +86,9 @@ class Model:
         return base + suffix if base.endswith("/v1") else base + "/v1" + suffix
 
     def complete(self, system: str, messages: list[dict], max_tokens: int = 1200) -> str:
+        if self.logical_requests >= self.max_requests:
+            raise ModelError("model_request_limit")
+        self.logical_requests += 1
         if self.flavor == "openai":
             base_payload = {"model": self.model,
                             "messages": [{"role": "system", "content": system}, *messages],
@@ -94,7 +101,9 @@ class Model:
         headers["Content-Type"] = "application/json"
         for attempt in range(4):
             timeout = remaining(self.deadline, 90, self.clock)
-            if self.requests >= self.max_requests:
+            # Secondary guard against a retry storm; logical calls are capped
+            # above, so 4xx/5xx/network retries do not exhaust the run budget.
+            if self.requests >= max(self.max_requests * 4, 4):
                 raise ModelError("model_request_limit")
             self.requests += 1
             payload = dict(base_payload, max_tokens=max_tokens)
@@ -137,7 +146,7 @@ class Model:
                 raise ModelError(f"model HTTP {status}") from None
             except BudgetExpired:
                 raise
-            except (urllib.error.URLError, TimeoutError) as exc:
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 if attempt < 3:
                     wait(min(2 ** attempt, 8), self.deadline, self.sleep, self.clock)
                     continue

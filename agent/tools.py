@@ -174,7 +174,7 @@ def shell(command: str, cwd: Path, timeout_s=20, output_limit=12000, *, deadline
         return {"exit_code": -1, "error": "invalid_command"}
     start = time.monotonic()
     try:
-        timeout = remaining(deadline, max(0.01, min(timeout_s, 90)))
+        timeout = remaining(deadline, max(0.01, min(timeout_s, 180)))
     except BudgetExpired:
         return {"exit_code": -1, "error": "deadline", "elapsed_s": 0}
     if os.name != "posix":
@@ -190,8 +190,23 @@ def shell(command: str, cwd: Path, timeout_s=20, output_limit=12000, *, deadline
 
     chunks = {"stdout": bytearray(), "stderr": bytearray()}
     totals = {"stdout": 0, "stderr": 0}
+    stamp = str(time.time_ns())
+    obs_dir = Path(cwd) / ".obs"
+    try:
+        obs_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        obs_dir = None
+    full_paths: dict[str, str] = {}
 
     def drain(name, pipe):
+        handle = None
+        if obs_dir is not None:
+            path = obs_dir / (stamp + "-" + name + ".out")
+            try:
+                handle = path.open("w", encoding="utf-8", errors="replace")
+                full_paths[name] = str(path)
+            except OSError:
+                handle = None
         try:
             while True:
                 block = pipe.read(4096)
@@ -200,7 +215,11 @@ def shell(command: str, cwd: Path, timeout_s=20, output_limit=12000, *, deadline
                 totals[name] += len(block)
                 room = max(0, output_limit - len(chunks[name]))
                 chunks[name].extend(block[:room])
+                if handle is not None:
+                    handle.write(redact(block.decode("utf-8", errors="replace")))
         finally:
+            if handle is not None:
+                handle.close()
             pipe.close()
 
     threads = [threading.Thread(target=drain, args=(name, pipe), daemon=True)
@@ -225,11 +244,17 @@ def shell(command: str, cwd: Path, timeout_s=20, output_limit=12000, *, deadline
         process.wait(timeout=1)
         for thread in threads:
             thread.join(0.25)
+    stdout = redact(bytes(chunks["stdout"]).decode("utf-8", errors="replace"))
+    stderr = redact(bytes(chunks["stderr"]).decode("utf-8", errors="replace"))
     result = {"exit_code": process.returncode,
-              **{name: redact(bytes(data).decode("utf-8", errors="replace")) for name, data in chunks.items()},
+              "stdout": stdout, "stderr": stderr,
+              "stdout_tail": stdout[-2000:], "stderr_tail": stderr[-2000:],
+              "full_output": full_paths.get("stdout"),
+              "full_error": full_paths.get("stderr"),
               "timed_out": timed_out,
               "truncated": any(count > output_limit for count in totals.values()),
               "captured_bytes": sum(len(data) for data in chunks.values()),
+              "full_output_bytes": dict(totals),
               "elapsed_s": round(time.monotonic() - start, 3)}
     if timed_out:
         result["error"] = "timeout"
