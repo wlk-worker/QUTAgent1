@@ -223,7 +223,9 @@ class MCPClient:
                 exc.close()
         except BudgetExpired:
             return None, {}, None, "timeout"
-        except (urllib.error.URLError, TimeoutError, OSError):
+        except TimeoutError:
+            return None, {}, None, "timeout"
+        except (urllib.error.URLError, OSError):
             return None, {}, None, "network_error"
         session_id = _header(headers, "Mcp-Session-Id")
         if session_id:

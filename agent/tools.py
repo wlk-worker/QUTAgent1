@@ -387,7 +387,12 @@ def http_request(method: str, url: str, *, allowed_origins, body=None, timeout_s
     except BudgetExpired:
         return {"error": "timeout", "url": safe_url, "origin": origin,
                 "elapsed_s": round(time.monotonic() - started_at, 3)}
-    except (urllib.error.URLError, TimeoutError, OSError):
+    except TimeoutError:
+        # A socket timeout can win the race against bounded_call's queue
+        # timeout; it is still a timeout, not a generic network failure.
+        return {"error": "timeout", "url": safe_url, "origin": origin,
+                "elapsed_s": round(time.monotonic() - started_at, 3)}
+    except (urllib.error.URLError, OSError):
         return {"error": "network_error", "url": safe_url, "origin": origin,
                 "elapsed_s": round(time.monotonic() - started_at, 3)}
 
@@ -466,7 +471,9 @@ class HttpSession:
             return status, raw, response_headers
         except BudgetExpired:
             return {"error": "timeout"}, b"", {}
-        except (urllib.error.URLError, TimeoutError, OSError):
+        except TimeoutError:
+            return {"error": "timeout"}, b"", {}
+        except (urllib.error.URLError, OSError):
             return {"error": "network_error"}, b"", {}
 
     def request(self, method, url, *, body=None, headers=None, save_to=None) -> dict:
