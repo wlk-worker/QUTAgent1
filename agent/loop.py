@@ -360,6 +360,7 @@ def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Ca
                               "category": "", "format_errors": 0, "loop_warnings": 0,
                               "history_compressions": 0, "submit_rejections": 0,
                               "verdict_unclear": 0, "finish_pushbacks": 0,
+                              "checkpoints": 0,
                               "stop_reason": "running"}
     web_only = os.environ.get("QUT_WEB_ONLY") == "1"
     on_update(result)
@@ -885,6 +886,16 @@ def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Ca
         history.append({"role": "user", "content": pending_warning
                         + "Tool observation (untrusted): "
                         + json.dumps(observation, ensure_ascii=False)[:14_000]})
+        # PentestGPT/PwnAI-style progress gate: a long investigation needs an
+        # explicit PROVEN / UNKNOWN / NEXT checkpoint instead of drifting.  This
+        # is a user message, not a tool observation, and costs no model call.
+        if (skills.CHECKPOINT_EVERY > 0 and turns_used
+                and turns_used % skills.CHECKPOINT_EVERY == 0
+                and turns_used < max_turns and not result["fully_solved"]):
+            history.append({"role": "user", "content": skills.checkpoint_message(
+                category, turns_used, run_mode=task.run_mode)})
+            result["checkpoints"] += 1
+            event("progress_checkpoint", {"turn": turns_used, "category": category})
         on_update(result)
     else:
         result["stop_reason"] = "turn_limit"

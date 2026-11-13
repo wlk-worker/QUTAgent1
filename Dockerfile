@@ -190,6 +190,7 @@ COPY scripts/check_toolchain.py /app/scripts/check_toolchain.py
 
 RUN chmod 0755 /usr/local/bin/ctf-checksec /usr/local/bin/ctf-disasm \
         /usr/local/bin/ctf-debug /usr/local/bin/ctf-strings /usr/local/bin/ctf-browse \
+        /usr/local/bin/ctf-web-recon /usr/local/bin/ctf-pwn-triage \
     && chmod 0755 /app/scripts/check_toolchain.py \
     && chmod -R a+rX /app/agent /app/toolchain.txt /opt/nuclei-templates \
     && { \
@@ -202,7 +203,7 @@ RUN chmod 0755 /usr/local/bin/ctf-checksec /usr/local/bin/ctf-disasm \
         for tool in r2 gdb objdump readelf strings nmap sqlmap ffuf gobuster \
                     binwalk patchelf socat nc nikto nuclei grpcurl checksec \
                     one_gadget seccomp-tools ROPgadget ctf-checksec ctf-disasm \
-                    ctf-debug ctf-strings ctf-browse; do \
+                    ctf-debug ctf-strings ctf-browse ctf-web-recon ctf-pwn-triage; do \
             if path=$(command -v "$tool" 2>/dev/null); then \
                 printf '%s: %s\n' "$tool" "$path"; \
             else \

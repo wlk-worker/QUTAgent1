@@ -1,19 +1,22 @@
 """Skills classification/playbooks and solver-loop hardening tests.
 
 Covers: category classification, category playbooks, tool/flag discipline text,
-format-error feedback, loop detector (warn 3 / break 5), history compression, and
-the new result fields while keeping the CTFY completion/submission semantics.
+format-error feedback, loop detector (warn 3 / break 5), history compression,
+stage/checkpoint guidance, and the new result fields while keeping the CTFY
+completion/submission semantics.
 """
 import json
+import os
 import sys
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from agent import skills
+from agent import official, skills
 from agent.contract import Task
 from agent.loop import (MAX_CONSECUTIVE_FORMAT_ERRORS, LoopDetector, compress_history,
                         parse_action, run)
@@ -119,6 +122,28 @@ class PlaybookTests(unittest.TestCase):
                        "one JSON object"):
             self.assertIn(marker, policy)
         self.assertIn(skills.WEB_PLAYBOOK, policy)
+
+    def test_policy_sections_include_stage_gates_and_recipes(self):
+        policy = skills.policy_sections("web")
+        self.assertIn("## Stage gates", policy)
+        self.assertIn("## Tool recipes: Web", policy)
+        self.assertIn("ctf-web-recon", policy)
+        self.assertIn("sqlmap", policy)
+        pwn_policy = skills.policy_sections("pwn")
+        self.assertIn("ctf-pwn-triage", pwn_policy)
+        self.assertIn("ROPgadget", pwn_policy)
+
+    def test_every_tool_recipe_is_category_specific_and_nonempty(self):
+        for category in ALL_CATEGORIES:
+            self.assertIn(category, skills.TOOL_RECIPES)
+            self.assertGreater(len(skills.TOOL_RECIPES[category]), 80)
+        self.assertEqual(skills.TOOL_RECIPES["qa"].count("No shell"), 1)
+
+    def test_checkpoint_message_is_actionable_and_not_a_task(self):
+        message = skills.checkpoint_message("pwn", 6)
+        self.assertIn("PROVEN / UNKNOWN / NEXT", message)
+        self.assertIn("ctf-pwn-triage", message)
+        self.assertIn("not a new task", message)
 
     def test_web_only_note_is_added_when_requested(self):
         self.assertIn("shell tool is disabled", skills.playbook("pwn", web_only=True))
@@ -412,6 +437,24 @@ class LoopHardeningTests(unittest.TestCase):
         self.assertTrue(any(message.get("content", "").startswith(
             "Tool observation (untrusted): ") for message in last_messages))
 
+    def test_periodic_checkpoint_is_injected_without_a_model_call(self):
+        replies = [json.dumps({"action": "shell", "command": f"probe {index}"})
+                   for index in range(6)]
+        replies.append(json.dumps({"action": "finish", "reason": "checkpoint enough"}))
+        model = _ScriptedModel(replies)
+        result = self._run(model, _Platform(category="web"), max_turns=7,
+                           command_tool=lambda line, cwd: {"exit_code": 0, "stdout": "ok"})
+        self.assertEqual(result["checkpoints"], 1)
+        # The checkpoint is a user message in the next model context, not a fake
+        # tool observation, and it names the staged progress protocol.
+        last_messages = model.histories[-1]
+        checkpoint = [message for message in last_messages
+                      if "Checkpoint after" in message.get("content", "")]
+        self.assertEqual(len(checkpoint), 1)
+        self.assertIn("PROVEN / UNKNOWN / NEXT", checkpoint[0]["content"])
+        events = _read_events(self.work)
+        self.assertTrue(any(entry["event"] == "progress_checkpoint" for entry in events))
+
     def test_submission_semantics_are_preserved(self):
         model = _ScriptedModel([
             json.dumps({"action": "submit", "question_id": "flag", "answer": "flag{real}",
@@ -424,6 +467,34 @@ class LoopHardeningTests(unittest.TestCase):
         self.assertTrue(result["fully_solved"])
         self.assertEqual(result["stop_reason"], "done")
         self.assertEqual(result["answers"], {})
+
+
+    def test_challenge_slice_defaults_and_can_be_disabled(self):
+        parser = official.build_parser()
+        self.assertEqual(parser.parse_args([]).challenge_seconds, 1200)
+        self.assertEqual(parser.parse_args(["--challenge-seconds", "0"]).challenge_seconds, 0)
+        self.assertEqual(parser.parse_args(["--challenge-seconds", "300"]).challenge_seconds, 300)
+
+
+class ToolboxTests(unittest.TestCase):
+    def test_new_toolbox_helpers_are_present_and_safe(self):
+        expected = {"ctf-web-recon": "python3", "ctf-pwn-triage": "bash"}
+        for name, interpreter in expected.items():
+            path = ROOT / "toolbox" / "bin" / name
+            self.assertTrue(path.is_file(), name)
+            head = path.read_text(encoding="utf-8").splitlines()[0].lower()
+            self.assertIn(interpreter, head)
+
+    def test_ensure_toolbox_path_prepends_the_repo_helpers(self):
+        old = os.environ.get("PATH", "")
+        try:
+            with mock.patch.dict(os.environ, {"PATH": "/usr/bin"}, clear=False):
+                resolved = official.ensure_toolbox_path()
+                self.assertTrue(resolved.endswith(str(Path("toolbox") / "bin")))
+                self.assertTrue(os.environ["PATH"].startswith(resolved + os.pathsep))
+                self.assertIn("/usr/bin", os.environ["PATH"])
+        finally:
+            os.environ["PATH"] = old
 
 
 if __name__ == "__main__":

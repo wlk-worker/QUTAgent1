@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# ctf-pwn-triage <binary> [libc]
+# One compact, bounded pwn triage record inspired by PwnAI's triage stage:
+# file identity, mitigations, ELF layout, interesting symbols/strings and
+# (when supplied) libc gadgets. It never executes the target.
+set -u
+MAX_BYTES=${CTF_PWN_TRIAGE_MAX_BYTES:-14000}
+TIMEOUT_S=${CTF_PWN_TRIAGE_TIMEOUT_S:-45}
+
+usage() {
+    printf 'usage: ctf-pwn-triage <binary> [libc]\n'
+    printf 'Bounded ELF triage: file, mitigations, layout, symbols/strings, optional libc gadgets.\n'
+}
+die() { printf 'ctf-pwn-triage: error: %s\n' "$*" >&2; exit 2; }
+emit() { printf '%s\n' "$*"; }
+
+case "${1:-}" in -h|--help) usage; exit 0 ;; esac
+[ "$#" -ge 1 ] || { usage >&2; exit 2; }
+bin=$1
+libc=${2:-}
+[ -e "$bin" ] || die "no such file: $bin"
+[ -f "$bin" ] || die "not a regular file: $bin"
+[ -r "$bin" ] || die "not readable: $bin"
+
+out=""
+append() { out="${out}$1
+"; }
+append "## target"
+append "$(file -b -- "$bin" 2>&1 || true)"
+append "path: $bin"
+
+append "## mitigations"
+if command -v ctf-checksec >/dev/null 2>&1; then
+    append "$(timeout "$TIMEOUT_S" ctf-checksec "$bin" 2>&1 | head -c 5000 || true)"
+else
+    append "(ctf-checksec unavailable; use readelf below)"
+fi
+
+append "## ELF header"
+if command -v readelf >/dev/null 2>&1; then
+    append "$(timeout "$TIMEOUT_S" readelf -h -- "$bin" 2>&1 | head -c 2500 || true)"
+    append "## program headers (interpreter/stack)"
+    append "$(timeout "$TIMEOUT_S" readelf -l -- "$bin" 2>&1 | grep -E 'INTERP|GNU_STACK|LOAD' | head -c 2000 || true)"
+    append "## dynamic dependencies"
+    append "$(timeout "$TIMEOUT_S" readelf -d -- "$bin" 2>&1 | grep -E 'NEEDED|RPATH|RUNPATH|BIND_NOW' | head -c 1500 || true)"
+    append "## selected symbols"
+    append "$(timeout "$TIMEOUT_S" readelf -sW -- "$bin" 2>&1 | grep -E ' (main|win|flag|system|execve|puts|gets|read|write|printf|scanf|malloc|free)$' | head -40 | head -c 3000 || true)"
+else
+    append "(readelf unavailable)"
+fi
+
+append "## strings of interest"
+if command -v strings >/dev/null 2>&1; then
+    append "$(timeout "$TIMEOUT_S" strings -a -- "$bin" 2>&1 \
+        | grep -Ei 'flag|/bin/|sh$|system|/proc/|secret|debug|admin' \
+        | head -40 | head -c 3000 || true)"
+fi
+
+if [ -n "$libc" ]; then
+    [ -r "$libc" ] || die "libc not readable: $libc"
+    append "## libc"
+    append "$(file -b -- "$libc" 2>&1 || true)"
+    if command -v one_gadget >/dev/null 2>&1; then
+        append "## one_gadget"
+        append "$(timeout "$TIMEOUT_S" one_gadget "$libc" 2>&1 | head -c 2500 || true)"
+    fi
+    if command -v ROPgadget >/dev/null 2>&1; then
+        append "## libc pop/ret gadgets"
+        append "$(timeout "$TIMEOUT_S" ROPgadget --binary "$libc" --only 'pop|ret' 2>&1 | grep -E 'pop rdi|pop rsi|pop rdx|ret$' | head -20 | head -c 2500 || true)"
+    fi
+fi
+
+append "## hint"
+append "Next: pick ONE primitive (overflow/format/UAF/etc), derive the exact offset with a cyclic pattern, then write a local pwntools exploit before touching remote."
+
+printf '%s' "$out" | head -c "$MAX_BYTES"
+if [ "$(printf '%s' "$out" | wc -c)" -gt "$MAX_BYTES" ]; then
+    printf '\n[ctf-pwn-triage: truncated at %s bytes]\n' "$MAX_BYTES"
+fi

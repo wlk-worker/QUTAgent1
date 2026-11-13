@@ -76,7 +76,8 @@ python scripts/run_official.py \
   --competition-id c0d8b4e3dd3b42c095d63d7dfa66431f \
   --max-challenges 4 \
   --max-turns 60 \
-  --max-seconds 28800
+  --max-seconds 28800 \
+  --challenge-seconds 1200
 ```
 
 只跑指定题（可重复）：
@@ -155,6 +156,7 @@ runtime/official/<competition_id>/
 - 入围赛每队 1 个实例，初选/正式 3 个；运行器默认串行，不会主动超过限制；
 - 遇到 `429 team_capacity_exceeded` 时先关闭旧实例，再启动下一题；
 - `--max-seconds` 是整次运行的总预算，不是单题预算；单题还受 `--max-turns` 限制；
+- `--challenge-seconds` 是单题时间片，默认 **1200 秒**（20 分钟）；它会被剩余总预算截断，避免一道题吃光整场。设为 `0` 可关闭单题时间片、只受 `--max-seconds` 限制；
 - `--max-model-requests` 是整次运行允许的**逻辑模型调用总数**；默认按“每题 64 次”自动计算（例如 17 题就是 1088 次）。不要把它当成单题上限，否则后面的题会因为前面的题耗尽预算而报 `model_request_limit`。
 - 实例启动/等待默认最多 **240 秒**（可用 `QUT_STARTUP_SECONDS` 调整）；平台繁忙时超过旧的 45 秒上限会报 `instance_wait_deadline`，这不是实例创建失败，适当放大启动预算即可。
 - 官方 Agent Track 为 2026-11-15 10:00 – 2026-11-22 20:00（Asia/Shanghai），
@@ -166,8 +168,8 @@ runtime/official/<competition_id>/
 
 - `SAMPLE-020`（纯问答，`is_qa_only: true`）：3/3 questions 全部通过，
   `fully_solved: true`；
-- `SAMPLE-001`（实例题）：成功启动真实实例、提交 `slug`、关闭实例；因本机
-  未安装/连接 WireGuard，未取得动态 flag，`fully_solved: false`。
+- `SAMPLE-001`（实例题）：成功启动真实实例、提交 `slug` 与动态 `flag`、关闭实例；
+  在 WSL root + WireGuard 下 `vpn_up: true`，平台确认为 `fully_solved: true`。
 
 这说明正式 API 的鉴权、题目读取、实例生命周期、提交和 QA 模式已经跑通；
 真实 Agent Track 的分数仍需在比赛窗口内用 `agent_play` token 和 VPN 运行。

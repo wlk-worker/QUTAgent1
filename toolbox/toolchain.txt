@@ -7,6 +7,7 @@ ctf-checksec <binary>        hardened summary (pwn checksec, readelf fallback)
 ctf-disasm <binary> [sym]    bounded objdump -d / radare2 pdf (no shell eval)
 ctf-debug <binary> [cmds...] gdb -batch -nx; never interactive
 ctf-strings <file> [n]       bounded strings -a
+ctf-pwn-triage <bin> [libc]  one compact ELF triage (mitigations/layout/symbols/libc gadgets)
 ctf-browse <url>             bounded headless Chromium render (DOM XSS / JS pages)
 checksec <binary>            checksec.sh (if installed)
 r2 / rabin2 / rasm2          radare2 static analysis
@@ -24,6 +25,8 @@ nuclei -t /opt/nuclei-templates -u <url>   starter exposure templates only
 nuclei -t <your-templates-dir> -u <url>    custom offline templates
 python -c 'import requests, httpx, bs4'    HTTP + HTML parsing
 ctf-browse <url> [--screenshot p]          headless Chromium render/DOM/console
+ctf-web-recon <url> [--timeout 8] [--max-pages 6]
+                                             bounded same-origin baseline inventory (links/forms/scripts/params)
 playwright (optional)                      headless Chromium for JS-rendered pages
 
 AI security / APIs

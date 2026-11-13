@@ -73,6 +73,25 @@ def _env(*names: str, default: str = "") -> str:
     return default
 
 
+def ensure_toolbox_path() -> str:
+    """Put the repository's toolbox helpers on PATH for local official runs.
+
+    The competition image copies ``toolbox/bin`` into ``/usr/local/bin``, but a
+    local WSL run would otherwise have no ``ctf-browse``/``ctf-pwn-triage``/
+    ``ctf-checksec``.  ``shell`` inherits PATH through ``command_environment``,
+    so this one change makes the same helper commands available in both modes.
+    """
+    repo = Path(__file__).resolve().parent.parent
+    toolbox = repo / "toolbox" / "bin"
+    if not toolbox.is_dir():
+        return ""
+    current = os.environ.get("PATH", "")
+    entries = current.split(os.pathsep) if current else []
+    if str(toolbox) not in entries:
+        os.environ["PATH"] = str(toolbox) + (os.pathsep + current if current else "")
+    return str(toolbox)
+
+
 def build_platform() -> Platform:
     base = _env("CTFY_PLATFORM_URL", "CTFY_BASE_URL", default="https://ctfy.tsinghua.edu.cn")
     token = _env("CTFY_TOKEN", "CTFY_AGENT_TOKEN", "CTFY_USER_TOKEN")
@@ -213,8 +232,8 @@ def run_competition(args: argparse.Namespace) -> int:
         model_budget = max(64, 64 * len(challenges))
     model = build_model(args.model, args.flavor, max_requests=model_budget)
     started = time.monotonic()
-    deadline = started + max(60, int(args.max_seconds))
-    platform.deadline = deadline
+    global_deadline = started + max(60, int(args.max_seconds))
+    platform.deadline = global_deadline
     work_root = Path(args.work_root).expanduser().resolve() / args.competition_id
     work_root.mkdir(parents=True, exist_ok=True)
     summary: dict[str, Any] = {
@@ -227,15 +246,30 @@ def run_competition(args: argparse.Namespace) -> int:
     for ordinal, item in enumerate(challenges, 1):
         cid = str(item.get("id") or "")
         name = str(item.get("name") or cid)
-        if time.monotonic() >= deadline:
+        if time.monotonic() >= global_deadline:
             summary["challenges"].append({"id": cid, "name": name, "status": "skipped_deadline"})
             break
+        # Reserve a bounded slice for each challenge instead of letting one
+        # rabbit hole consume the whole --max-seconds budget.  The global
+        # deadline remains the hard stop.
+        remaining_global = max(1.0, global_deadline - time.monotonic())
+        per_challenge = int(getattr(args, "challenge_seconds", 0) or 0)
+        if per_challenge > 0:
+            slice_seconds = min(remaining_global, max(90.0, float(per_challenge)))
+        else:
+            slice_seconds = remaining_global
+        challenge_deadline = min(global_deadline, time.monotonic() + slice_seconds)
+        platform.deadline = challenge_deadline
         work_dir = work_root / cid.replace("/", "_")
         work_dir.mkdir(parents=True, exist_ok=True)
         print(f"[{ordinal}/{len(challenges)}] {cid} {name}", flush=True)
-        record: dict[str, Any] = {"id": cid, "name": name, "status": "running"}
+        record: dict[str, Any] = {
+            "id": cid, "name": name, "status": "running",
+            "deadline_s": round(slice_seconds, 1),
+        }
         requests_before = model.logical_requests
         state: dict[str, Any] = {}
+        vpn_path: Path | None = None
         instance_id: str | None = None
         try:
             detail = _fetch_challenge(platform, cid, args.competition_id)
@@ -258,7 +292,6 @@ def run_competition(args: argparse.Namespace) -> int:
                 run_mode=run_mode,
                 dry_run=False,
             )
-            vpn_path: Path | None = None
 
             def on_instance(instance: str, info: dict[str, Any]) -> None:
                 nonlocal vpn_path
@@ -302,7 +335,7 @@ def run_competition(args: argparse.Namespace) -> int:
             result = run(
                 task, platform, model,
                 max_turns=max(1, int(args.max_turns)),
-                deadline=deadline,
+                deadline=challenge_deadline,
                 on_update=on_update,
                 on_instance=on_instance,
                 allow_synthetic_fallback=False,
@@ -332,6 +365,7 @@ def run_competition(args: argparse.Namespace) -> int:
             })
             print(f"  error: {record['error']}", flush=True)
         finally:
+            platform.deadline = global_deadline
             if vpn_path is not None and record.get("vpn_up") and not args.keep_vpn:
                 try:
                     subprocess.run(["wg-quick", "down", str(vpn_path)],
@@ -366,6 +400,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-challenges", type=int, default=4)
     parser.add_argument("--max-turns", type=int, default=DEFAULT_MAX_TURNS)
     parser.add_argument("--max-seconds", type=int, default=DEFAULT_TIME_BUDGET)
+    parser.add_argument("--challenge-seconds", type=int, default=1200,
+                        help="per-challenge time slice; the global --max-seconds still caps the run "
+                             "(0 = no per-challenge slice)")
     parser.add_argument("--max-model-requests", type=int, default=0,
                         help="total logical model calls for the whole invocation "
                              "(0 = 64 per selected challenge)")
@@ -387,6 +424,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     for env_file in args.env_file:
         load_env_file(env_file)
+    ensure_toolbox_path()
     if not args.competition_id:
         args.competition_id = _env("CTFY_COMPETITION_ID", default=DEFAULT_COMPETITION_ID)
     if not args.competition_id:
