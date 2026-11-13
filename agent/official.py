@@ -185,6 +185,28 @@ def _result_payload(result: dict[str, Any], challenge: dict[str, Any]) -> dict[s
     }
 
 
+def _all_challenges(platform: Platform, competition_id: str,
+                    page_size: int = 100) -> list[dict[str, Any]]:
+    """Page the challenge list instead of silently truncating at 100."""
+    items: list[dict[str, Any]] = []
+    offset = 0
+    while True:
+        page = platform.challenges(competition_id, limit=page_size, offset=offset)
+        batch = [item for item in page.get("items") or [] if isinstance(item, dict)]
+        if not batch:
+            break
+        items.extend(batch)
+        total = page.get("total")
+        offset += len(batch)
+        if isinstance(total, int) and offset >= total:
+            break
+        if len(batch) < page_size:
+            break
+        if offset >= 10_000:
+            break
+    return items
+
+
 def _challenge_ids(challenges: list[dict[str, Any]], requested: list[str], maximum: int) -> list[dict[str, Any]]:
     if requested:
         wanted = set(requested)
@@ -194,15 +216,26 @@ def _challenge_ids(challenges: list[dict[str, Any]], requested: list[str], maxim
     return selected[:max(0, maximum)]
 
 
+def _competition_metadata(platform: Platform, competition_id: str) -> dict[str, Any]:
+    """Detail can exceed the request window on huge competitions; use list fallback."""
+    try:
+        return platform.competition(competition_id)
+    except (BudgetExpired, PlatformError) as exc:
+        data = platform.request("GET", "/competitions?limit=100").data
+        for item in data.get("items") or []:
+            if isinstance(item, dict) and str(item.get("id")) == competition_id:
+                return item
+        raise exc
+
+
 def run_competition(args: argparse.Namespace) -> int:
     platform = build_platform()
-    competition = platform.competition(args.competition_id)
+    competition = _competition_metadata(platform, args.competition_id)
     print(f"competition: {competition.get('title') or args.competition_id} ({args.competition_id})")
     print(f"phase: {competition.get('phase')} registered: {competition.get('is_registered')}")
     print(f"team: {competition.get('my_team_name')} challenges: {competition.get('challenge_count')}")
     if args.list:
-        data = platform.challenges(args.competition_id, limit=100)
-        items = data.get("items") or []
+        items = _all_challenges(platform, args.competition_id)
         print(f"challenges: {len(items)}")
         for challenge in items:
             print(f"  {challenge.get('id')}  {challenge.get('name')}  "
@@ -217,7 +250,7 @@ def run_competition(args: argparse.Namespace) -> int:
         print("team is not registered for this competition", file=sys.stderr)
         return 3
 
-    listing = platform.challenges(args.competition_id, limit=100)
+    listing = {"items": _all_challenges(platform, args.competition_id)}
     challenges = _challenge_ids(listing.get("items") or [], args.challenge or [], args.max_challenges)
     if not challenges:
         print("no challenges selected (event not started or all already solved)", file=sys.stderr)

@@ -55,6 +55,7 @@ class Platform:
 
     def request(self, method: str, path: str, payload: dict | None = None, *,
                 timeout_ceiling: float | None = None,
+                timeout_default: float = 20.0,
                 max_retries: int | None = None,
                 retry_unsafe: bool = False) -> Response:
         if not path.startswith("/") or path.startswith("//"):
@@ -64,7 +65,7 @@ class Platform:
         retry_limit = 6 if max_retries is None else max(0, min(int(max_retries), 6))
         attempt = 0
         while True:
-            timeout = remaining(self.deadline, 20, self.clock)
+            timeout = remaining(self.deadline, timeout_default, self.clock)
             if timeout_ceiling is not None:
                 timeout = min(timeout, max(0.2, float(timeout_ceiling)))
             req = urllib.request.Request(url, data=body, method=method, headers={
@@ -108,6 +109,12 @@ class Platform:
                         continue
                     raise Paused(exc.code, code, message) from None
                 safely_rejected = exc.code == 429 or code == "capacity_exceeded"
+                # 503 platform_busy explicitly says the request was not
+                # processed, so a bounded retry is safe even for POST/DELETE.
+                if code == "platform_busy" and attempt < 4 and self._can_wait(wait):
+                    attempt += 1
+                    budget_wait(wait, self.deadline, self.sleep, self.clock)
+                    continue
                 transient_read = method == "GET" and exc.code in (500, 502, 503, 504)
                 if safely_rejected or transient_read:
                     if attempt < 4 and self._can_wait(wait):
@@ -154,7 +161,10 @@ class Platform:
         return self.request("GET", "/competitions?" + query).data
 
     def competition(self, competition_id: str) -> dict:
-        return self.request("GET", "/competitions/" + urllib.parse.quote(competition_id, safe="")).data
+        return self.request(
+            "GET", "/competitions/" + urllib.parse.quote(competition_id, safe=""),
+            timeout_default=60.0,
+        ).data
 
     def challenges(self, competition_id: str, *, limit: int = 100, offset: int = 0) -> dict:
         query = urllib.parse.urlencode({
@@ -162,6 +172,7 @@ class Platform:
         })
         return self.request(
             "GET", f"/competitions/{urllib.parse.quote(competition_id, safe='')}/challenges?" + query,
+            timeout_default=60.0,
         ).data
 
     def challenge(self, challenge_id: str, *, competition_id: str | None = None,
@@ -171,7 +182,8 @@ class Platform:
         if competition_id:
             path += "?" + urllib.parse.urlencode({"competition_id": competition_id})
         return self.request(
-            "GET", path, timeout_ceiling=timeout_ceiling, max_retries=max_retries,
+            "GET", path, timeout_ceiling=timeout_ceiling, timeout_default=60.0,
+            max_retries=max_retries,
         ).data
 
     def instances(self, competition_id: str, *, challenge_id: str | None = None,
@@ -184,14 +196,15 @@ class Platform:
             params["challenge_id"] = challenge_id
         if status:
             params["status"] = status
-        return self.request("GET", "/instances?" + urllib.parse.urlencode(params)).data
+        return self.request("GET", "/instances?" + urllib.parse.urlencode(params),
+                            timeout_default=60.0).data
 
     def start_instance(self, challenge_id: str, competition_id: str, *, ttl: int | None = None) -> str:
         payload: dict[str, Any] = {"challenge_id": challenge_id, "competition_id": competition_id}
         if ttl is not None:
             payload["ttl"] = int(ttl)
         try:
-            data = self.request("POST", "/instances", payload).data
+            data = self.request("POST", "/instances", payload, timeout_default=60.0).data
             return str(data["id"])
         except PlatformError as exc:
             # The POST may have succeeded even when the response was lost
@@ -231,7 +244,7 @@ class Platform:
             # retry; if a duplicate already exists the platform answers
             # instance_already_running and reconciliation adopts it.
             try:
-                return str(self.request("POST", "/instances", payload).data["id"])
+                return str(self.request("POST", "/instances", payload, timeout_default=60.0).data["id"])
             except PlatformError as second:
                 if second.code not in {"mutation_outcome_unknown", "instance_already_running"}:
                     raise
@@ -252,10 +265,12 @@ class Platform:
         if competition_id:
             suffix = "?" + urllib.parse.urlencode({"competition_id": competition_id})
         while True:
-            response = self.request("GET", f"/instances/{escaped}/status{suffix}")
+            response = self.request("GET", f"/instances/{escaped}/status{suffix}",
+                                    timeout_default=60.0)
             status = str(response.data.get("status", "")).lower()
             if status == "ready":
-                return self.request("GET", f"/instances/{escaped}{suffix}").data
+                return self.request("GET", f"/instances/{escaped}{suffix}",
+                                    timeout_default=60.0).data
             if status in {"error", "failed", "stopped", "expired"}:
                 raise PlatformError(0, "instance_" + status, str(response.data.get("error") or ""))
             wait = _retry_seconds(response.headers, response.data, 0)
@@ -267,7 +282,7 @@ class Platform:
         path = f"/instances/{urllib.parse.quote(instance_id, safe='')}"
         if competition_id:
             path += "?" + urllib.parse.urlencode({"competition_id": competition_id})
-        return self.request("GET", path).data
+        return self.request("GET", path, timeout_default=60.0).data
 
     def close_instance(self, instance_id: str, competition_id: str) -> dict:
         path = (f"/instances/{urllib.parse.quote(instance_id, safe='')}?"
@@ -276,7 +291,7 @@ class Platform:
             # DELETE is idempotent.  If the response is lost after the server
             # already tore the instance down, a second DELETE normally reports
             # 404, which means the desired state has been reached.
-            return self.request("DELETE", path, retry_unsafe=True).data
+            return self.request("DELETE", path, retry_unsafe=True, timeout_default=60.0).data
         except PlatformError as exc:
             if exc.status == 404:
                 return {"id": instance_id, "status": "stopped"}
@@ -320,13 +335,13 @@ class Platform:
     def submit(self, instance_id: str, question_id: str, answer: str | list[str]) -> dict:
         return self.request("POST", "/submissions", {
             "instance_id": instance_id, "question_id": question_id, "answer": answer,
-        }, retry_unsafe=True).data
+        }, retry_unsafe=True, timeout_default=60.0).data
 
     def submit_qa(self, challenge_id: str, competition_id: str, question_id: str, answer: str | list[str]) -> dict:
         return self.request("POST", "/qa/submissions", {
             "challenge_id": challenge_id, "competition_id": competition_id,
             "question_id": question_id, "answer": answer,
-        }, retry_unsafe=True).data
+        }, retry_unsafe=True, timeout_default=60.0).data
 
     def download_attachment(self, challenge_id: str, name: str, instance_id: str | None = None) -> bytes:
         """Fetch player-visible attachment; never accept traversal or redirects."""

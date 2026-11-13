@@ -25,7 +25,8 @@ def assess(task_raw, challenge, instance, solved, confirmed_complete=False):
     gated = next((s["gated_questions"] for s in reversed(sources) if "gated_questions" in s), None)
     explicit = confirmed_complete or any(s.get("challenge_fully_solved") is True for s in sources)
     # No declared hidden questions is necessary before inferring completeness.
-    verified = bool(states) and all(s == "correct" for s in states.values()) and gated == 0
+    # A missing `gated_questions` key means "no gate declared", not "unknown".
+    verified = bool(states) and all(s == "correct" for s in states.values()) and gated in (None, 0)
     return {"questions": states, "solved": sorted(confirmed), "fully_solved": bool(explicit or verified),
             "gated_questions": gated,
             "completion_basis": "platform_verdict" if explicit else "verified_questions" if verified else "unconfirmed"}

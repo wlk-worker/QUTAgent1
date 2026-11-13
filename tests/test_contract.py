@@ -77,7 +77,7 @@ class ContractTests(unittest.TestCase):
                 import time
                 self.clock = time.monotonic
 
-            def request(self, method, path, payload=None):
+            def request(self, method, path, payload=None, **kwargs):
                 return next(self.responses)
 
         platform = PollingPlatform()

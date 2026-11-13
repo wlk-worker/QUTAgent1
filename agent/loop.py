@@ -841,16 +841,28 @@ def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Ca
                         correct = any(str(q.get("id")) == qid and q.get("answered_correctly") is True
                                       for q in current.get("questions", []))
                         if not correct:
-                            raise
-                        result["uncertain_mutation"]["reconciled"] = True
-                        reconciled = True
-                        verdict = {"correct": True, "challenge_fully_solved": current.get("challenge_fully_solved") is True}
+                            # Never abort the whole task on an unconfirmed POST:
+                            # return the uncertainty to the model, keep the
+                            # question open, and let it refresh or try a
+                            # different, supported answer. Do not resend the
+                            # same value (the fingerprint is already recorded).
+                            verdict = {"correct": False, "challenge_fully_solved": False,
+                                       "attempts_remaining": None, "outcome_unknown": True}
+                        else:
+                            result["uncertain_mutation"]["reconciled"] = True
+                            reconciled = True
+                            verdict = {"correct": True, "challenge_fully_solved": current.get("challenge_fully_solved") is True}
                     # Gate 2: only an explicit `correct: true` from the platform
                     # counts as success; a truthy string or a verdict about a
                     # different question does not (SECQA-0132 style claims).
                     checked = gate.validate_verdict(verdict, qid, reconciled=reconciled)
                     result["last_verdict_basis"] = checked.basis
                     observation = {"verdict": verdict}
+                    if verdict.get("outcome_unknown"):
+                        observation["error"] = "submit_outcome_unknown"
+                        observation["note"] = ("POST outcome unknown; read-only reconciliation "
+                                               "did not confirm; no duplicate POST")
+                        observation["attempts_consumed"] = "unknown"
                     if checked.problems:
                         result["verdict_unclear"] += 1
                         observation["verdict_problems"] = list(checked.problems)

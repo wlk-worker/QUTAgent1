@@ -29,6 +29,7 @@ class ReliabilityTests(unittest.TestCase):
 
     def test_hidden_questions_and_verified_completion(self):
         info = {"questions": [{"id": "f", "answered_correctly": True}]}
+        self.assertTrue(assess({}, {}, info, [])["fully_solved"])
         self.assertFalse(assess({"gated_questions": 1}, {}, info, [])["fully_solved"])
         self.assertTrue(assess({"gated_questions": 0}, {}, info, [])["fully_solved"])
         self.assertTrue(assess({}, {}, {}, ["f"], True)["fully_solved"])
