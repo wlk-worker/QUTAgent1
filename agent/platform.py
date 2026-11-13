@@ -239,7 +239,24 @@ class Platform:
     def close_instance(self, instance_id: str, competition_id: str) -> dict:
         path = (f"/instances/{urllib.parse.quote(instance_id, safe='')}?"
                 + urllib.parse.urlencode({"competition_id": competition_id}))
-        return self.request("DELETE", path).data
+        try:
+            # DELETE is idempotent.  If the response is lost after the server
+            # already tore the instance down, a second DELETE normally reports
+            # 404, which means the desired state has been reached.
+            return self.request("DELETE", path, retry_unsafe=True).data
+        except PlatformError as exc:
+            if exc.status == 404:
+                return {"id": instance_id, "status": "stopped"}
+            try:
+                current = self.instance(instance_id, competition_id)
+            except PlatformError as check:
+                if check.status == 404:
+                    return {"id": instance_id, "status": "stopped"}
+                raise exc from None
+            status = str(current.get("status") or "").lower()
+            if status in {"stopping", "stopped", "expired"}:
+                return current
+            raise
 
     def vpn_config(self, instance_id: str) -> bytes:
         """Download the WireGuard profile for an instance; never log its bytes."""

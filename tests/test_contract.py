@@ -233,6 +233,49 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(opener.calls, 2)
         self.assertEqual(waits, [4])
 
+    def test_close_already_gone_is_success(self):
+        class Opener:
+            calls = 0
+
+            def open(self, request, timeout):
+                self.calls += 1
+                raise urllib.error.HTTPError(request.full_url, 404, "gone", {},
+                                              io.BytesIO(b'{"code":"instance_not_found"}'))
+
+        opener = Opener()
+        platform = Platform("https://platform.test", "test-token", opener=opener, sleep=lambda n: None)
+        result = platform.close_instance("I-1", "event")
+        self.assertEqual(result["status"], "stopped")
+        self.assertEqual(opener.calls, 1)
+
+    def test_lost_close_retries_idempotent_delete(self):
+        class Response:
+            headers = {}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self, limit):
+                return b'{"id":"I-1","status":"stopping"}'
+
+        class Opener:
+            calls = 0
+
+            def open(self, request, timeout):
+                self.calls += 1
+                if self.calls < 3:
+                    raise urllib.error.URLError("lost response")
+                return Response()
+
+        opener = Opener()
+        platform = Platform("https://platform.test", "test-token", opener=opener, sleep=lambda n: None)
+        result = platform.close_instance("I-1", "event")
+        self.assertEqual(result["status"], "stopping")
+        self.assertEqual(opener.calls, 3)
+
     def test_uncertain_post_is_not_retried(self):
         class Opener:
             calls = 0
