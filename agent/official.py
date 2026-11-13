@@ -81,7 +81,8 @@ def build_platform() -> Platform:
     return Platform(base, token)
 
 
-def build_model(model_override: str | None = None, flavor_override: str | None = None) -> Model:
+def build_model(model_override: str | None = None, flavor_override: str | None = None,
+                *, max_requests: int = 64) -> Model:
     flavor = (flavor_override or _env("LLM_FLAVOR") or
               ("anthropic" if _env("ANTHROPIC_BASE_URL") and not _env("OPENAI_BASE_URL") else "openai"))
     if flavor not in {"openai", "anthropic"}:
@@ -99,7 +100,7 @@ def build_model(model_override: str | None = None, flavor_override: str | None =
         raise SystemExit("missing LLM_MODEL/OPENAI_MODEL/ANTHROPIC_MODEL")
     if not key:
         raise SystemExit("missing LLM_API_KEY (or OPENAI_API_KEY/ANTHROPIC_API_KEY)")
-    return Model(flavor, model, base, key)
+    return Model(flavor, model, base, key, max_requests=max_requests)
 
 
 def _render_readme(challenge: dict[str, Any]) -> str:
@@ -183,7 +184,14 @@ def run_competition(args: argparse.Namespace) -> int:
         print("no challenges selected (event not started or all already solved)", file=sys.stderr)
         return 4
 
-    model = build_model(args.model, args.flavor)
+    model_budget = int(args.max_model_requests or 0)
+    if model_budget <= 0:
+        # The cap is cumulative for the whole invocation.  A fixed 64 is
+        # enough for one or two challenges but silently starves later ones;
+        # reserve a generous per-challenge allowance while the global
+        # --max-seconds deadline remains the hard stop.
+        model_budget = max(64, 64 * len(challenges))
+    model = build_model(args.model, args.flavor, max_requests=model_budget)
     started = time.monotonic()
     deadline = started + max(60, int(args.max_seconds))
     platform.deadline = deadline
@@ -206,6 +214,7 @@ def run_competition(args: argparse.Namespace) -> int:
         work_dir.mkdir(parents=True, exist_ok=True)
         print(f"[{ordinal}/{len(challenges)}] {cid} {name}", flush=True)
         record: dict[str, Any] = {"id": cid, "name": name, "status": "running"}
+        requests_before = model.logical_requests
         state: dict[str, Any] = {}
         instance_id: str | None = None
         try:
@@ -284,7 +293,8 @@ def run_competition(args: argparse.Namespace) -> int:
                 "turns": int(result.get("turns") or 0),
                 "stop_reason": result.get("stop_reason") or "",
                 "instance_id": instance_id,
-                "model_requests": getattr(model, "logical_requests", 0),
+                "model_requests": model.logical_requests - requests_before,
+                "model_requests_total": model.logical_requests,
             })
             if result.get("startup_fallback"):
                 record["startup_fallback"] = result["startup_fallback"]
@@ -333,6 +343,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-challenges", type=int, default=4)
     parser.add_argument("--max-turns", type=int, default=DEFAULT_MAX_TURNS)
     parser.add_argument("--max-seconds", type=int, default=DEFAULT_TIME_BUDGET)
+    parser.add_argument("--max-model-requests", type=int, default=0,
+                        help="total logical model calls for the whole invocation "
+                             "(0 = 64 per selected challenge)")
     parser.add_argument("--work-root", default="runtime/official")
     parser.add_argument("--vpn-dir", default="runtime/vpn", help="where WireGuard profiles are saved")
     parser.add_argument("--list", action="store_true", help="list challenges and exit")

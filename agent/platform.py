@@ -197,21 +197,54 @@ class Platform:
             # The POST may have succeeded even when the response was lost
             # (Windows TLS/schannel occasionally drops the handshake).  Do not
             # blindly POST again and create a second instance; reconcile from
-            # the team's live instance list instead.
+            # the team's live instance list instead.  The platform can take a
+            # few seconds to expose a freshly-created instance, so poll rather
+            # than doing a single lookup.
             if exc.code != "mutation_outcome_unknown":
                 raise
+
+            def reconcile() -> str | None:
+                try:
+                    rows = self.instances(competition_id, challenge_id=challenge_id, limit=20).get("items") or []
+                except PlatformError:
+                    return None
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    if str(row.get("challenge_id") or "") not in {"", challenge_id}:
+                        continue
+                    if str(row.get("status") or "").lower() in {"starting", "ready"} and row.get("id"):
+                        return str(row["id"])
+                return None
+
+            last_error: PlatformError = exc
+            for delay in (0, 1, 2, 3, 5):
+                if delay:
+                    if not self._can_wait(delay):
+                        break
+                    self.sleep(delay)
+                found = reconcile()
+                if found:
+                    return found
+            # The first POST may never have reached the platform.  After the
+            # list has been checked repeatedly, allow exactly one controlled
+            # retry; if a duplicate already exists the platform answers
+            # instance_already_running and reconciliation adopts it.
             try:
-                rows = self.instances(competition_id, challenge_id=challenge_id, limit=20).get("items") or []
-            except PlatformError:
-                raise exc from None
-            for row in rows:
-                if not isinstance(row, dict):
-                    continue
-                if str(row.get("challenge_id") or "") not in {"", challenge_id}:
-                    continue
-                if str(row.get("status") or "").lower() in {"starting", "ready"} and row.get("id"):
-                    return str(row["id"])
-            raise
+                return str(self.request("POST", "/instances", payload).data["id"])
+            except PlatformError as second:
+                if second.code not in {"mutation_outcome_unknown", "instance_already_running"}:
+                    raise
+                last_error = second
+            for delay in (0, 1, 2, 3, 5):
+                if delay:
+                    if not self._can_wait(delay):
+                        break
+                    self.sleep(delay)
+                found = reconcile()
+                if found:
+                    return found
+            raise last_error
 
     def wait_instance(self, instance_id: str, competition_id: str | None = None) -> dict:
         escaped = urllib.parse.quote(instance_id, safe="")
