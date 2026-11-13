@@ -183,6 +183,9 @@ python scripts/run_official.py \
 `examples/official.env.example`。正式比赛令牌必须用 **`agent_play`** 模板，
 不能用 `registry_push`；令牌和模型 key 不要提交到 Git。
 
+2026-11-13 练习场 Web/Pwn 验证结果（10 道新增 3 解）见
+[docs/practice-run-2026-11-13-web-pwn.md](docs/practice-run-2026-11-13-web-pwn.md)。
+
 ## 7. 目录结构
 
 ```text
@@ -210,7 +213,7 @@ docker run --rm --user root -v "$PWD:/repo" -w /repo \
   -X utf8 -m unittest discover -s tests -v
 ```
 
-当前本地测试规模为 158 项；Windows 和镜像内会有少量与平台/浏览器相关的 skip。测试通过只说明本地契约和工具链可用，不代表真实平台分数。
+当前本地测试规模为 201 项；Windows 和镜像内会有少量与平台/浏览器相关的 skip。测试通过只说明本地契约和工具链可用，不代表真实平台分数。
 
 ## 9. 常见问题
 

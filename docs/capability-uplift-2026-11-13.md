@@ -87,10 +87,14 @@
 
 ## 4. 当前能力（诚实基线）
 
-- 练习场 `bc60dc...` 已确认 fully solved：`SAMPLE-001`（实例题，含动态 flag）和 `SAMPLE-020`（QA）。
-- 之前 17 题整场运行中，`SAMPLE-003/005/006/007/008` 等仍未解出；常见原因是目标连接重置、只看本地附件、提交未验证答案，而不是平台协议错误。
-- 新阶段门/配方/helper 已通过 201 个单元测试；**尚未**用新版本跑完整 17 题做前后对比，因此不能声称“练习场分数已提升”。预期是提高单位时间的有效探测率，而不是保证解出率。
+- 练习场 `bc60dc...` 已确认 fully solved：`SAMPLE-001`、`SAMPLE-020`、`SAMPLE-016`、`SAMPLE-022`、`SAMPLE-024`，共 5 道。
+- 2026-11-13 晚间用新版本只跑 Web/Pwn 10 道：新增 3 道（`SAMPLE-016`、`SAMPLE-022`、`SAMPLE-024`）；
+  `SAMPLE-006` 利用已成功但提交响应丢失；`SAMPLE-008/021` 卡在实例启动；`SAMPLE-007/009/019/023` 60 轮 `turn_limit`。
+- 新阶段门/配方/helper 已通过 201 个单元测试。这轮验证说明简单 Web/Pwn 的有效探测率有提升，
+  但复杂 Web 和平台提交/启动可靠性仍是短板，不能据此声称“练习场整体分数已大幅提升”。
 - 图像评测路线（harness `qutagent-v2-525e844`）与官方 API runner 是两条独立路线；本次改动主要服务官方 API runner，镜像构建会把新 helper 一起带入。
+
+详细逐题记录见 [practice-run-2026-11-13-web-pwn.md](practice-run-2026-11-13-web-pwn.md)。
 
 ## 5. 验证
 
@@ -105,6 +109,14 @@ python toolbox/bin/ctf-web-recon http://127.0.0.1:1 --timeout 1
 
 bash -n toolbox/bin/ctf-pwn-triage
 ```
+
+2026-11-13 练习场 Web/Pwn 验证（10 道，新增 3 解）：
+
+```text
+runtime/official/bc60dc1764f34413964a547102f17261/official-summary.json
+```
+
+详见 [practice-run-2026-11-13-web-pwn.md](practice-run-2026-11-13-web-pwn.md)。
 
 提交：`ef2bc24 feat: add staged solving playbooks and bounded triage helpers`（已推送 `origin/master`）。
 
