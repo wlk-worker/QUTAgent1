@@ -273,6 +273,7 @@ def run_competition(args: argparse.Namespace) -> int:
                 deadline=deadline,
                 on_update=on_update,
                 on_instance=on_instance,
+                allow_synthetic_fallback=False,
             )
             instance_id = result.get("instance_id") or state.get("instance_id")
             record.update({

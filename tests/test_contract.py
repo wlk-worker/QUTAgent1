@@ -393,6 +393,20 @@ class ContractTests(unittest.TestCase):
             self.assertIn("startup_fallback", result)
             self.assertEqual(result["turns"], 1)
 
+    def test_synthetic_start_fallback_can_be_disabled(self):
+        class FailingStartPlatform(FakePlatform):
+            def start_instance(self, challenge_id, competition_id):
+                raise PlatformError(0, "network_error")
+
+        with tempfile.TemporaryDirectory() as temp:
+            task = Task(Path(temp), {"challenge": {"id": "C-1"},
+                                     "questions": [{"id": "flag"}]}, "",
+                        "C-1", "event", "instance", False)
+            with self.assertRaises(PlatformError):
+                run(task, FailingStartPlatform(), FakeModel([]), max_turns=1,
+                    deadline=10**12, on_update=lambda value: None,
+                    allow_synthetic_fallback=False)
+
     def test_instance_submission_unlocks_next_question(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

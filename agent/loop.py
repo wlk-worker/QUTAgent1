@@ -352,7 +352,8 @@ def compress_history(history: list[dict], *, max_messages: int = HISTORY_MAX_MES
 
 
 def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Callable[[dict], None],
-        command_tool=shell, on_instance: Callable[[str, dict], None] | None = None) -> dict:
+        command_tool=shell, on_instance: Callable[[str, dict], None] | None = None,
+        allow_synthetic_fallback: bool = True) -> dict:
     result: dict[str, Any] = {"answers": {}, "solved": [], "fully_solved": False, "turns": 0,
                               "tool_calls_made": 0, "http_calls": 0, "mcp_calls": 0,
                               "instance_id": None,
@@ -436,6 +437,11 @@ def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Ca
                     event("on_instance_failed", {"error": result["on_instance_error"]})
         except (PlatformError, BudgetExpired) as exc:
             if time.monotonic() >= deadline:
+                raise
+            if not allow_synthetic_fallback:
+                # The official API runner must not invent an instance: a
+                # synthetic id cannot receive submissions, and silently
+                # continuing would waste the model budget on a fake target.
                 raise
             instance_id = (str(existing) if existing
                            else "fallback-" + str(task.challenge_id))
