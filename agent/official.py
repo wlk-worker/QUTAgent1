@@ -262,6 +262,9 @@ def run_competition(args: argparse.Namespace) -> int:
 
             def on_instance(instance: str, info: dict[str, Any]) -> None:
                 nonlocal vpn_path
+                # Record early so the outer exception handler can close the
+                # instance even if the first model call fails before on_update.
+                state["instance_id"] = instance
                 endpoint = info.get("vpn_endpoint") or {}
                 if not isinstance(endpoint, dict) or not endpoint:
                     return

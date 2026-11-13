@@ -440,6 +440,14 @@ def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Ca
                     result["on_instance_error"] = (type(exc).__name__ + ": " + str(exc))[:240]
                     event("on_instance_failed", {"error": result["on_instance_error"]})
         except (PlatformError, BudgetExpired) as exc:
+            if instance_id and not allow_synthetic_fallback:
+                # The official runner must not leak a real instance when
+                # waiting/booting times out; the caller cannot see this local
+                # id once the exception escapes.
+                try:
+                    platform.close_instance(instance_id, task.competition_id)
+                except PlatformError:
+                    pass
             if time.monotonic() >= deadline:
                 raise
             if not allow_synthetic_fallback:
