@@ -103,6 +103,26 @@ def build_model(model_override: str | None = None, flavor_override: str | None =
     return Model(flavor, model, base, key, max_requests=max_requests)
 
 
+def _fetch_challenge(platform: Platform, challenge_id: str, competition_id: str) -> dict:
+    """Fetch challenge metadata with a few outer retries.
+
+    ``Platform.request`` already retries individual GETs, but a longer TLS
+    outage can outlast one request's retry window.  Startup metadata is
+    read-only, so repeating the whole fetch is safe.
+    """
+    last: PlatformError | None = None
+    for attempt in range(3):
+        try:
+            return platform.challenge(challenge_id, competition_id=competition_id)
+        except PlatformError as exc:
+            last = exc
+            if exc.code not in {"network_error", "mutation_outcome_unknown"} or attempt >= 2:
+                raise
+            time.sleep(min(2 ** attempt, 8))
+    assert last is not None
+    raise last
+
+
 def _render_readme(challenge: dict[str, Any]) -> str:
     lines = [
         f"# {challenge.get('name') or challenge.get('id', 'challenge')}",
@@ -218,7 +238,7 @@ def run_competition(args: argparse.Namespace) -> int:
         state: dict[str, Any] = {}
         instance_id: str | None = None
         try:
-            detail = platform.challenge(cid, competition_id=args.competition_id)
+            detail = _fetch_challenge(platform, cid, args.competition_id)
             run_mode = "qa" if detail.get("is_qa_only") else "instance"
             readme = _render_readme(detail)
             (work_dir / "README.md").write_text(readme, encoding="utf-8")

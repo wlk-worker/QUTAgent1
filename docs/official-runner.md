@@ -156,6 +156,7 @@ runtime/official/<competition_id>/
 - 遇到 `429 team_capacity_exceeded` 时先关闭旧实例，再启动下一题；
 - `--max-seconds` 是整次运行的总预算，不是单题预算；单题还受 `--max-turns` 限制；
 - `--max-model-requests` 是整次运行允许的**逻辑模型调用总数**；默认按“每题 64 次”自动计算（例如 17 题就是 1088 次）。不要把它当成单题上限，否则后面的题会因为前面的题耗尽预算而报 `model_request_limit`。
+- 实例启动/等待默认最多 **240 秒**（可用 `QUT_STARTUP_SECONDS` 调整）；平台繁忙时超过旧的 45 秒上限会报 `instance_wait_deadline`，这不是实例创建失败，适当放大启动预算即可。
 - 官方 Agent Track 为 2026-11-15 10:00 – 2026-11-22 20:00（Asia/Shanghai），
   以平台 `/competitions` 返回的 `starts_at` / `ends_at` 为准。
 

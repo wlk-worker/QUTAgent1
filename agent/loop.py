@@ -422,7 +422,11 @@ def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Ca
     if task.run_mode == "instance":
         existing = task.raw.get("target_instance")
         old_platform_deadline = getattr(platform, "deadline", None)
-        startup_deadline = min(deadline, time.monotonic() + 45)
+        try:
+            startup_seconds = max(30.0, float(os.environ.get("QUT_STARTUP_SECONDS", "240")))
+        except (TypeError, ValueError):
+            startup_seconds = 240.0
+        startup_deadline = min(deadline, time.monotonic() + startup_seconds)
         try:
             platform.deadline = (startup_deadline if old_platform_deadline is None
                                  else min(old_platform_deadline, startup_deadline))
