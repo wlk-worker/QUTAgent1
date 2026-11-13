@@ -186,6 +186,7 @@ def run_competition(args: argparse.Namespace) -> int:
     model = build_model(args.model, args.flavor)
     started = time.monotonic()
     deadline = started + max(60, int(args.max_seconds))
+    platform.deadline = deadline
     work_root = Path(args.work_root).expanduser().resolve() / args.competition_id
     work_root.mkdir(parents=True, exist_ok=True)
     summary: dict[str, Any] = {
