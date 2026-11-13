@@ -262,4 +262,5 @@ docker run --rm --user root -v "$PWD:/repo" -w /repo \
 - [工具链与构建](docs/toolchain.md)
 - [本地靶题实验](docs/lab-experiments.md)
 - [能力与参考项目](docs/reference-projects.md)
+- [2026-11-13 求解能力增强记录](docs/capability-uplift-2026-11-13.md)
 - [扩展点](docs/extension-points.md)
