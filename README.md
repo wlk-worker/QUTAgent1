@@ -159,6 +159,30 @@ registry.ctfy.io/<你的命名空间>/qutagent:v1
 
 再选择模型并启动。镜像是否允许运行、是否需要人工审核，以平台页面为准。
 
+## 6b. 正式比赛 API 运行器（TPCTF 2026）
+
+正式比赛的“智能体团队赛道”不使用 Docker 镜像入口，而是在选手自己的 VPS/本机
+运行、用 `agent_play` token 调平台 `/api/v1` 接口。新增的入口是：
+
+```bash
+python scripts/run_official.py \
+  --env-file artifacts/official.env \
+  --competition-id c0d8b4e3dd3b42c095d63d7dfa66431f \
+  --list
+```
+
+它支持：
+
+- 读取比赛/题目列表，按题目启动实例并等待 `ready`；
+- 自动下载 WireGuard 配置到 `runtime/vpn/`，可选 `QUT_WG_UP=1` 自动 `wg-quick up`；
+- 每题独立工作目录，提交走 `/submissions` 或 `/qa/submissions`；
+- 题目结束自动关闭实例，汇总写入 `runtime/official/<competition_id>/official-summary.json`；
+- 平台大模型网关：优先读取 `OPENAI_BASE_URL` / `OPENAI_API_KEY`（或 Anthropic 对应变量）。
+
+完整说明见 [docs/official-runner.md](docs/official-runner.md)，环境变量模板见
+`examples/official.env.example`。正式比赛令牌必须用 **`agent_play`** 模板，
+不能用 `registry_push`；令牌和模型 key 不要提交到 Git。
+
 ## 7. 目录结构
 
 ```text

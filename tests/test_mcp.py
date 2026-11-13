@@ -286,17 +286,17 @@ class _McpPlatform:
         self.origin = origin
         self.submissions = []
 
-    def challenge(self, challenge_id):
+    def challenge(self, challenge_id, **kwargs):
         return {"id": challenge_id, "name": "AI assistant with MCP tools",
                 "category": "ai", "questions": [{"id": "flag", "prompt": "find the flag"}]}
 
     def start_instance(self, challenge_id, competition_id):
         return "instance-1"
 
-    def wait_instance(self, instance_id):
+    def wait_instance(self, instance_id, competition_id=None):
         return self.instance(instance_id)
 
-    def instance(self, instance_id):
+    def instance(self, instance_id, competition_id=None):
         return {"id": instance_id,
                 "services": [{"service_type": "mcp", "url": self.origin}],
                 "questions": [{"id": "flag", "prompt": "find the flag"}]}
@@ -416,7 +416,7 @@ class LoopMcpActionTests(unittest.TestCase):
 
     def test_mcp_requires_a_platform_scope(self):
         class NoScopePlatform(_McpPlatform):
-            def instance(self, instance_id):
+            def instance(self, instance_id, competition_id=None):
                 return {"id": instance_id, "services": [],
                         "questions": [{"id": "flag", "prompt": "find it"}]}
 

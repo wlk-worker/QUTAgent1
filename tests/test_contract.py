@@ -34,17 +34,17 @@ class FakePlatform:
         self.submissions = []
         self.unlocked = False
 
-    def challenge(self, challenge_id):
+    def challenge(self, challenge_id, **kwargs):
         return {"id": challenge_id, "questions": [{"id": "flag", "prompt": "First"}]}
 
     def start_instance(self, challenge_id, competition_id):
         self.started += 1
         return "instance-1"
 
-    def wait_instance(self, instance_id):
+    def wait_instance(self, instance_id, competition_id=None):
         return self.instance(instance_id)
 
-    def instance(self, instance_id):
+    def instance(self, instance_id, competition_id=None):
         questions = [{"id": "flag", "prompt": "First", "answered_correctly": self.unlocked}]
         if self.unlocked:
             questions.append({"id": "second", "prompt": "Unlocked", "answered_correctly": False})
@@ -244,8 +244,26 @@ class ContractTests(unittest.TestCase):
         opener = Opener()
         platform = Platform("https://platform.test", "test-token", opener=opener, sleep=lambda n: None)
         with self.assertRaises(PlatformError):
-            platform.submit("i", "flag", "candidate")
+            # Ordinary POSTs stay one-shot: a lost instance-create response
+            # must be reconciled from the live instance list, never posted twice.
+            platform.request("POST", "/instances", {"challenge_id": "C-1", "competition_id": "event"})
         self.assertEqual(opener.calls, 1)
+
+    def test_uncertain_submission_is_retried_once(self):
+        class Opener:
+            calls = 0
+
+            def open(self, request, timeout):
+                self.calls += 1
+                raise urllib.error.URLError("lost response")
+
+        opener = Opener()
+        platform = Platform("https://platform.test", "test-token", opener=opener, sleep=lambda n: None)
+        with self.assertRaises(PlatformError):
+            platform.submit("i", "flag", "candidate")
+        # One original submission plus two identical retries is safe; a
+        # different guess would consume another attempt.
+        self.assertEqual(opener.calls, 3)
 
     def test_pause_beyond_deadline_is_reported(self):
         class Opener:
@@ -355,7 +373,7 @@ class ContractTests(unittest.TestCase):
 
     def test_qa_submits_without_starting_instance(self):
         class QaPlatform(FakePlatform):
-            def challenge(self, challenge_id):
+            def challenge(self, challenge_id, **kwargs):
                 return {"id": challenge_id, "questions": [{"id": "answer", "prompt": "Pick A", "choices": ["A", "B"]}]}
 
             def submit_qa(self, challenge_id, competition_id, qid, answer):

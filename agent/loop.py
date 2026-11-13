@@ -351,9 +351,11 @@ def compress_history(history: list[dict], *, max_messages: int = HISTORY_MAX_MES
     return [history[0], {"role": "user", "content": summary}, *recent], True
 
 
-def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Callable[[dict], None], command_tool=shell) -> dict:
+def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Callable[[dict], None],
+        command_tool=shell, on_instance: Callable[[str, dict], None] | None = None) -> dict:
     result: dict[str, Any] = {"answers": {}, "solved": [], "fully_solved": False, "turns": 0,
                               "tool_calls_made": 0, "http_calls": 0, "mcp_calls": 0,
+                              "instance_id": None,
                               "category": "", "format_errors": 0, "loop_warnings": 0,
                               "history_compressions": 0, "submit_rejections": 0,
                               "verdict_unclear": 0, "finish_pushbacks": 0,
@@ -425,7 +427,13 @@ def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Ca
                                  else min(old_platform_deadline, startup_deadline))
             instance_id = (str(existing) if existing
                            else platform.start_instance(task.challenge_id, task.competition_id))
-            info = platform.wait_instance(instance_id)
+            info = platform.wait_instance(instance_id, task.competition_id)
+            if on_instance is not None:
+                try:
+                    on_instance(instance_id, info)
+                except Exception as exc:  # a VPN/config hook must not lose the run
+                    result["on_instance_error"] = (type(exc).__name__ + ": " + str(exc))[:240]
+                    event("on_instance_failed", {"error": result["on_instance_error"]})
         except (PlatformError, BudgetExpired) as exc:
             if time.monotonic() >= deadline:
                 raise
@@ -442,6 +450,7 @@ def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Ca
             result["startup_fallback"] = type(exc).__name__ + ":" + str(exc)[:80]
         finally:
             platform.deadline = old_platform_deadline
+        result["instance_id"] = instance_id
     elif task.run_mode != "qa":
         result["stop_reason"] = "unsupported_run_mode"
         on_update(result)
@@ -470,9 +479,9 @@ def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Ca
         """
         nonlocal challenge, info, allowed_origins
         try:
-            challenge = platform.challenge(task.challenge_id)
+            challenge = platform.challenge(task.challenge_id, competition_id=task.competition_id)
             if instance_id:
-                info = platform.instance(instance_id)
+                info = platform.instance(instance_id, task.competition_id)
         except (PlatformError, BudgetExpired) as exc:
             result["state_refresh_errors"] = result.get("state_refresh_errors", 0) + 1
             result["last_state_refresh_error"] = (type(exc).__name__ + ":"
@@ -808,7 +817,8 @@ def run(task, platform, model, *, max_turns: int, deadline: float, on_update: Ca
                         on_update(result)
                         # GET only, never another POST. If the state does not
                         # explicitly confirm acceptance, preserve the uncertainty.
-                        current = platform.instance(instance_id) if instance_id else platform.challenge(task.challenge_id)
+                        current = (platform.instance(instance_id, task.competition_id) if instance_id
+                                   else platform.challenge(task.challenge_id, competition_id=task.competition_id))
                         correct = any(str(q.get("id")) == qid and q.get("answered_correctly") is True
                                       for q in current.get("questions", []))
                         if not correct:

@@ -55,7 +55,8 @@ class Platform:
 
     def request(self, method: str, path: str, payload: dict | None = None, *,
                 timeout_ceiling: float | None = None,
-                max_retries: int | None = None) -> Response:
+                max_retries: int | None = None,
+                retry_unsafe: bool = False) -> Response:
         if not path.startswith("/") or path.startswith("//"):
             raise ValueError("API path must be relative to /api/v1")
         url = self.base_url + path
@@ -135,26 +136,93 @@ class Platform:
                     attempt += 1
                     budget_wait(wait, self.deadline, self.sleep, self.clock)
                     continue
+                # Submission endpoints are the one place where a lost response
+                # is common (Windows schannel drops the TLS handshake).  A
+                # duplicate identical answer is not a second guess; retry it
+                # twice rather than aborting the whole challenge on a transient
+                # network error.  Other POSTs remain one-shot to avoid creating
+                # duplicate instances.
+                if retry_unsafe and attempt < 2 and self._can_wait(wait):
+                    attempt += 1
+                    budget_wait(wait, self.deadline, self.sleep, self.clock)
+                    continue
                 raise PlatformError(0, "network_error" if method == "GET" else "mutation_outcome_unknown") from None
 
-    def challenge(self, challenge_id: str, *, timeout_ceiling: float | None = None,
-                  max_retries: int | None = None) -> dict:
+    def competitions(self, *, limit: int = 100, offset: int = 0) -> dict:
+        """List competitions visible to this token (official API, not image eval)."""
+        query = urllib.parse.urlencode({"limit": max(1, min(int(limit), 100)), "offset": max(0, int(offset))})
+        return self.request("GET", "/competitions?" + query).data
+
+    def competition(self, competition_id: str) -> dict:
+        return self.request("GET", "/competitions/" + urllib.parse.quote(competition_id, safe="")).data
+
+    def challenges(self, competition_id: str, *, limit: int = 100, offset: int = 0) -> dict:
+        query = urllib.parse.urlencode({
+            "limit": max(1, min(int(limit), 10000)), "offset": max(0, int(offset)),
+        })
         return self.request(
-            "GET", f"/challenges/{urllib.parse.quote(challenge_id, safe='')}",
-            timeout_ceiling=timeout_ceiling, max_retries=max_retries,
+            "GET", f"/competitions/{urllib.parse.quote(competition_id, safe='')}/challenges?" + query,
         ).data
 
-    def start_instance(self, challenge_id: str, competition_id: str) -> str:
-        data = self.request("POST", "/instances", {"challenge_id": challenge_id, "competition_id": competition_id}).data
-        return str(data["id"])
+    def challenge(self, challenge_id: str, *, competition_id: str | None = None,
+                  timeout_ceiling: float | None = None,
+                  max_retries: int | None = None) -> dict:
+        path = f"/challenges/{urllib.parse.quote(challenge_id, safe='')}"
+        if competition_id:
+            path += "?" + urllib.parse.urlencode({"competition_id": competition_id})
+        return self.request(
+            "GET", path, timeout_ceiling=timeout_ceiling, max_retries=max_retries,
+        ).data
 
-    def wait_instance(self, instance_id: str) -> dict:
+    def instances(self, competition_id: str, *, challenge_id: str | None = None,
+                  status: str | None = None, limit: int = 50) -> dict:
+        params: dict[str, Any] = {
+            "competition_id": competition_id,
+            "limit": max(1, min(int(limit), 100)),
+        }
+        if challenge_id:
+            params["challenge_id"] = challenge_id
+        if status:
+            params["status"] = status
+        return self.request("GET", "/instances?" + urllib.parse.urlencode(params)).data
+
+    def start_instance(self, challenge_id: str, competition_id: str, *, ttl: int | None = None) -> str:
+        payload: dict[str, Any] = {"challenge_id": challenge_id, "competition_id": competition_id}
+        if ttl is not None:
+            payload["ttl"] = int(ttl)
+        try:
+            data = self.request("POST", "/instances", payload).data
+            return str(data["id"])
+        except PlatformError as exc:
+            # The POST may have succeeded even when the response was lost
+            # (Windows TLS/schannel occasionally drops the handshake).  Do not
+            # blindly POST again and create a second instance; reconcile from
+            # the team's live instance list instead.
+            if exc.code != "mutation_outcome_unknown":
+                raise
+            try:
+                rows = self.instances(competition_id, challenge_id=challenge_id, limit=20).get("items") or []
+            except PlatformError:
+                raise exc from None
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                if str(row.get("challenge_id") or "") not in {"", challenge_id}:
+                    continue
+                if str(row.get("status") or "").lower() in {"starting", "ready"} and row.get("id"):
+                    return str(row["id"])
+            raise
+
+    def wait_instance(self, instance_id: str, competition_id: str | None = None) -> dict:
         escaped = urllib.parse.quote(instance_id, safe="")
+        suffix = ""
+        if competition_id:
+            suffix = "?" + urllib.parse.urlencode({"competition_id": competition_id})
         while True:
-            response = self.request("GET", f"/instances/{escaped}/status")
+            response = self.request("GET", f"/instances/{escaped}/status{suffix}")
             status = str(response.data.get("status", "")).lower()
             if status == "ready":
-                return self.request("GET", f"/instances/{escaped}").data
+                return self.request("GET", f"/instances/{escaped}{suffix}").data
             if status in {"error", "failed", "stopped", "expired"}:
                 raise PlatformError(0, "instance_" + status, str(response.data.get("error") or ""))
             wait = _retry_seconds(response.headers, response.data, 0)
@@ -162,19 +230,53 @@ class Platform:
                 raise PlatformError(0, "instance_wait_deadline")
             budget_wait(wait, self.deadline, self.sleep, self.clock)
 
-    def instance(self, instance_id: str) -> dict:
-        return self.request("GET", f"/instances/{urllib.parse.quote(instance_id, safe='')}").data
+    def instance(self, instance_id: str, competition_id: str | None = None) -> dict:
+        path = f"/instances/{urllib.parse.quote(instance_id, safe='')}"
+        if competition_id:
+            path += "?" + urllib.parse.urlencode({"competition_id": competition_id})
+        return self.request("GET", path).data
+
+    def close_instance(self, instance_id: str, competition_id: str) -> dict:
+        path = (f"/instances/{urllib.parse.quote(instance_id, safe='')}?"
+                + urllib.parse.urlencode({"competition_id": competition_id}))
+        return self.request("DELETE", path).data
+
+    def vpn_config(self, instance_id: str) -> bytes:
+        """Download the WireGuard profile for an instance; never log its bytes."""
+        request = urllib.request.Request(
+            self.base_url + f"/instances/{urllib.parse.quote(instance_id, safe='')}/vpn-config",
+            headers={"Authorization": "Bearer " + self.token, "Accept": "application/octet-stream"},
+            method="GET",
+        )
+        try:
+            timeout = remaining(self.deadline, 30, self.clock)
+            def fetch():
+                with self.opener.open(request, timeout=timeout) as response:
+                    return response.read(1_000_001)
+            data = bounded_call(fetch, timeout)
+            if len(data) > 1_000_000:
+                raise ValueError("vpn_config_too_large")
+            return data
+        except urllib.error.HTTPError as exc:
+            status = exc.code
+            exc.close()
+            raise PlatformError(status, "vpn_config_error") from None
+        except BudgetExpired:
+            raise
+        except (urllib.error.URLError, TimeoutError, ConnectionError,
+                http.client.HTTPException, ssl.SSLError, OSError):
+            raise PlatformError(0, "network_error") from None
 
     def submit(self, instance_id: str, question_id: str, answer: str | list[str]) -> dict:
         return self.request("POST", "/submissions", {
             "instance_id": instance_id, "question_id": question_id, "answer": answer,
-        }).data
+        }, retry_unsafe=True).data
 
     def submit_qa(self, challenge_id: str, competition_id: str, question_id: str, answer: str | list[str]) -> dict:
         return self.request("POST", "/qa/submissions", {
             "challenge_id": challenge_id, "competition_id": competition_id,
             "question_id": question_id, "answer": answer,
-        }).data
+        }, retry_unsafe=True).data
 
     def download_attachment(self, challenge_id: str, name: str, instance_id: str | None = None) -> bytes:
         """Fetch player-visible attachment; never accept traversal or redirects."""

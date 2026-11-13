@@ -36,7 +36,7 @@ class ReliabilityTests(unittest.TestCase):
 
     def test_model_finish_and_qa_state(self):
         class P:
-            def challenge(self, _): return {"questions": [{"id": "a", "prompt": "A"}]}
+            def challenge(self, _, **kwargs): return {"questions": [{"id": "a", "prompt": "A"}]}
         class M:
             input_tokens = output_tokens = 0
             def complete(self, *args): return '{"action":"finish"}'
@@ -49,7 +49,7 @@ class ReliabilityTests(unittest.TestCase):
     def test_qa_requires_platform_confirmation(self):
         class P:
             correct = False
-            def challenge(self, _):
+            def challenge(self, _, **kwargs):
                 return {"questions": [{"id": "a", "prompt": "A", "answered_correctly": self.correct}]}
             def submit_qa(self, *args):
                 self.correct = True

@@ -349,16 +349,16 @@ class _FakePlatform:
         self.origin = origin
         self.submissions = []
 
-    def challenge(self, challenge_id):
+    def challenge(self, challenge_id, **kwargs):
         return {"id": challenge_id, "questions": [{"id": "flag", "prompt": "find it"}]}
 
     def start_instance(self, challenge_id, competition_id):
         return "instance-1"
 
-    def wait_instance(self, instance_id):
+    def wait_instance(self, instance_id, competition_id=None):
         return self.instance(instance_id)
 
-    def instance(self, instance_id):
+    def instance(self, instance_id, competition_id=None):
         return {"id": instance_id,
                 "services": [{"service_type": "http", "host": "127.0.0.1",
                               "port": int(self.origin.rsplit(":", 1)[1]), "url": self.origin}],

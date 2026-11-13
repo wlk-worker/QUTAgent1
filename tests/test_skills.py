@@ -247,7 +247,7 @@ class _Platform:
         self.services = services or []
         self.submissions = []
 
-    def challenge(self, challenge_id):
+    def challenge(self, challenge_id, **kwargs):
         return {"id": challenge_id, "name": "Fixture challenge",
                 "category": self.category,
                 "questions": [{"id": "flag", "prompt": "find it"}]}
@@ -255,10 +255,10 @@ class _Platform:
     def start_instance(self, challenge_id, competition_id):
         return "instance-1"
 
-    def wait_instance(self, instance_id):
+    def wait_instance(self, instance_id, competition_id=None):
         return self.instance(instance_id)
 
-    def instance(self, instance_id):
+    def instance(self, instance_id, competition_id=None):
         return {"id": instance_id, "services": self.services,
                 "questions": [{"id": "flag", "prompt": "find it"}]}
 
